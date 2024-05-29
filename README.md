@@ -26,7 +26,13 @@ It includes all the necessary ROS packages to operate the robot and is intended 
     sudo apt-get update
     rosdep install --from-paths src --ignore-src -r -y
     ```
-
+3. Update submodules
+    ```bash
+    cd src/interbotix_ros_core/interbotix_ros_xseries/interbotix_xs_driver/
+    git submodules init
+    git submodules update --recursive
+    cd ../../../..
+    ```
 3. Build the workspace:
 
     ```bash
