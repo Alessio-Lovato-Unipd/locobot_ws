@@ -13,18 +13,24 @@
 [submodule "src/kobuki_ros"]
 	path = src/kobuki_ros
 	url = https://github.com/kobuki-base/kobuki_ros.git
+	branch = devel
 [submodule "src/kobuki_core"]
 	path = src/kobuki_core
 	url = https://github.com/kobuki-base/kobuki_core.git
+	branch = release/1.4.x
 [submodule "src/kobuki_ros_interfaces"]
 	path = src/kobuki_ros_interfaces
 	url = https://github.com/kobuki-base/kobuki_ros_interfaces.git
+	branch = release/1.0.x
 [submodule "src/ecl_core"]
 	path = src/ecl_core
 	url = https://github.com/stonier/ecl_core.git
+	branch = release/1.2.x
 [submodule "src/ecl_lite"]
 	path = src/ecl_lite
 	url = https://github.com/stonier/ecl_lite.git
+	branch = release/1.2.x
 [submodule "src/sophus"]
 	path = src/sophus
 	url = https://github.com/clalancette/sophus.git
+	branch = clalancette/fix-compiler-error
