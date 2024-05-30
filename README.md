@@ -28,10 +28,7 @@ It includes all the necessary ROS packages to operate the robot and is intended 
     ```
 3. Update submodules
     ```bash
-    cd src/interbotix_ros_core/interbotix_ros_xseries/interbotix_xs_driver/
-    git submodules init
-    git submodules update --recursive
-    cd ../../../..
+    git submodules update --init --recursive
     ```
 3. Build the workspace:
 
@@ -75,7 +72,7 @@ The first commit of this repository contains the following packages in the `src`
 - [interbotix_ros_rovers](https://github.com/Interbotix/interbotix_ros_rovers) - humble
 - [interbotix_ros_toolboxes](https://github.com/Interbotix/interbotix_ros_toolboxes)
 - [kobuki_core](https://github.com/kobuki-base/kobuki_core) - Release 1.4.x
-- [kobuki_ros](https://github.com/kobuki-base/kobuki_ros) - Release 1.1.x
+- [kobuki_ros](https://github.com/kobuki-base/kobuki_ros) - devel
 - [kobuki_ros_interfaces](https://github.com/kobuki-base/kobuki_ros_interfaces) - Release 1.0.x
 - [sophus](https://github.com/clalancette/sophus) - clalancette/fix-compiler-error
 

@@ -1,0 +1,30 @@
+[submodule "src/interbotix_ros_rovers"]
+	path = src/interbotix_ros_rovers
+	url = https://github.com/Alessio-Lovato-Unipd/interbotix_ros_rovers.git
+	branch = humble
+[submodule "src/interbotix_ros_core"]
+	path = src/interbotix_ros_core
+	url = https://github.com/Alessio-Lovato-Unipd/interbotix_ros_core.git
+	branch = humble
+[submodule "src/interbotix_ros_toolboxes"]
+	path = src/interbotix_ros_toolboxes
+	url = https://github.com/Interbotix/interbotix_ros_toolboxes.git
+	branch = humble
+[submodule "src/kobuki_ros"]
+	path = src/kobuki_ros
+	url = https://github.com/kobuki-base/kobuki_ros.git
+[submodule "src/kobuki_core"]
+	path = src/kobuki_core
+	url = https://github.com/kobuki-base/kobuki_core.git
+[submodule "src/kobuki_ros_interfaces"]
+	path = src/kobuki_ros_interfaces
+	url = https://github.com/kobuki-base/kobuki_ros_interfaces.git
+[submodule "src/ecl_core"]
+	path = src/ecl_core
+	url = https://github.com/stonier/ecl_core.git
+[submodule "src/ecl_lite"]
+	path = src/ecl_lite
+	url = https://github.com/stonier/ecl_lite.git
+[submodule "src/sophus"]
+	path = src/sophus
+	url = https://github.com/clalancette/sophus.git
