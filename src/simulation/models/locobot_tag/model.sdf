@@ -1,0 +1,24 @@
+<?xml version='1.0'?>
+<sdf version='1.7'>
+  <model name='locobot_tag'>
+  <static>true</static> <!-- This model is static, it will not move -->
+    <link name='apriltag_locobot_link'>
+      <pose>0 0 -0 0 -0 0</pose>
+      <visual name='visual'>
+        <pose>0 0 -0.005 0 -0 0</pose>
+        <geometry>
+          <box>
+            <size>0.2 0.2 0.01</size>
+          </box>
+        </geometry>
+        <material>
+          <script>
+            <uri>model://locobot_tag/materials/scripts</uri>
+            <uri>model://locobot_tag/materials/textures</uri>
+            <name>LocobotTag/Visual</name>
+          </script>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

@@ -9,8 +9,9 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(nav2_bringup REQUIRED)
 find_package(slam_toolbox REQUIRED)
+find_package(gazebo_ros REQUIRED)
 
-# SRC dependencies
+# source file dependencies
 find_package(nav2_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp_action REQUIRED)
@@ -40,8 +41,14 @@ endif()
 
 # Demo program
 add_executable(demo src/demo.cpp)
-ament_target_dependencies(demo rclcpp geometry_msgs nav2_msgs rclcpp_action rclcpp rclcpp_components
-  moveit_core moveit_ros_planning_interface moveit_msgs)
+ament_target_dependencies(demo rclcpp
+                               geometry_msgs 
+                               nav2_msgs 
+                               rclcpp_action 
+                               rclcpp_components
+                               moveit_core
+                               moveit_ros_planning_interface
+                               moveit_msgs)
 target_include_directories(demo PUBLIC include)
 
 # install targets
@@ -55,6 +62,8 @@ install(DIRECTORY
     config
     maps
     rviz
+    models
+    urdf
   DESTINATION share/${PROJECT_NAME}
 )
 

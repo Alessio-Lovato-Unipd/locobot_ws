@@ -1,0 +1,14 @@
+material LocobotTag/Visual
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture tag41_12_00001.png
+        filtering trilinear
+      }
+    }
+  }
+}
