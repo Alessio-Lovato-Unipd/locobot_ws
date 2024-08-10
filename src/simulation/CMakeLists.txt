@@ -10,6 +10,8 @@ find_package(ament_cmake REQUIRED)
 find_package(nav2_bringup REQUIRED)
 find_package(slam_toolbox REQUIRED)
 find_package(gazebo_ros REQUIRED)
+find_package(apriltag_ros REQUIRED)
+find_package(image_proc REQUIRED)
 
 # source file dependencies
 find_package(nav2_msgs REQUIRED)
@@ -64,6 +66,7 @@ install(DIRECTORY
     rviz
     models
     urdf
+    media
   DESTINATION share/${PROJECT_NAME}
 )
 

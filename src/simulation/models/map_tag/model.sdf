@@ -13,8 +13,6 @@
         </geometry>
         <material>
           <script>
-            <uri>model://map_tag/materials/scripts</uri>
-            <uri>model://map_tag/materials/textures</uri>
             <name>MapTag/Visual</name>
           </script>
         </material>

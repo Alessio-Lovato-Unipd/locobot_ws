@@ -27,6 +27,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 import os
+import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from interbotix_xs_modules.xs_common import (
@@ -42,7 +43,6 @@ from launch.actions import (
     OpaqueFunction,
     GroupAction,
     SetEnvironmentVariable,
-    ExecuteProcess
 )
 from launch.conditions import IfCondition, LaunchConfigurationEquals
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -56,7 +56,7 @@ from launch.substitutions import (
 from launch_ros.actions import Node, SetRemap
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
-import yaml
+
 
 
 def load_yaml(package_name, file_path):
@@ -68,6 +68,7 @@ def load_yaml(package_name, file_path):
             return yaml.safe_load(file)
     except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
         return None
+
 
 
 def generate_launch_description():
@@ -122,7 +123,7 @@ def generate_launch_description():
     
     external_urdf_loc_launch_arg = DeclareLaunchArgument(
             'external_urdf_loc',
-            default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'models', 'locobot_tag_urdf', 'locobot_tag.urdf.xacro']),
+            default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'urdf', 'locobot_tag.urdf.xacro']),
             description=(
                 'the file path to the custom semantic description file that you would like to '
                 "include in the Interbotix robot's semantic description."
@@ -130,7 +131,7 @@ def generate_launch_description():
         )
 
     # Define Gazebo classic environment variables
-    resources = os.path.join(get_package_share_directory('simulation'), 'urdf')
+    resources = os.path.join(get_package_share_directory('simulation'))
     models = os.path.join(get_package_share_directory('simulation'), 'models')
 
     if 'GAZEBO_RESOURCE_PATH' in os.environ:
@@ -305,6 +306,7 @@ def generate_launch_description():
             'use_rviz': 'false',
             'use_camera': 'true',
             'external_urdf_loc': external_urdf_loc,
+            'use_gazebo_debug': 'false',
             
         }.items()
     )
@@ -328,9 +330,7 @@ def generate_launch_description():
                         PathJoinSubstitution([FindPackageShare('simulation'), 'models', 'camera', 'model.sdf']),
                         '-x', '0.0', '-y', '0.0', '-z', '3.0',
                         '-R', '0.0', '-P', '0.0', '-Y', '0.0'],
-        output='screen',
-        remappings=[('locobot/env_camera/image_raw', '/env_camera/image_raw'),
-                    ('locobot/env_camera/camera_info','/env_camera/camera_info')]
+        output='screen'
     )
 
     rviz = Node(
@@ -340,7 +340,26 @@ def generate_launch_description():
         arguments=['-d', PathJoinSubstitution([FindPackageShare("simulation"), 'rviz', 'navigation.rviz'])],
         output='screen'
     )
-    
+
+    # AprilTag node that publishes the pose of the tags
+    apriltag_node = Node(
+        package='apriltag_ros',
+        executable='apriltag_node',
+        name='apriltag_node',
+        parameters= [os.path.join(get_package_share_directory('simulation'), 'config', 'apriltag.yaml')],
+        remappings=[('/camera_info', '/env_camera/camera_info'),
+                    ('/image_rect', '/env_camera/image_raw'),
+                    ('/tf', '/tf_tag')],
+
+    )
+
+    image_proc_node = Node(
+        package='image_proc',
+        executable='image_proc',
+        name='image_proc_node',
+        namespace='env_camera',
+        output='screen'
+    )
 
     return LaunchDescription([
         SetEnvironmentVariable('GAZEBO_RESOURCE_PATH', value=resources_path),
@@ -354,7 +373,9 @@ def generate_launch_description():
         #move_group_node,
         #nav2_bringup_launch,
         gazebo_simulation_launch,
-        spawn_apriltag,
         spawn_camera,
+        spawn_apriltag,
+        #image_proc_node,
+        apriltag_node,
         #rviz,
     ])

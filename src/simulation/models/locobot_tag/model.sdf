@@ -13,8 +13,6 @@
         </geometry>
         <material>
           <script>
-            <uri>model://locobot_tag/materials/scripts</uri>
-            <uri>model://locobot_tag/materials/textures</uri>
             <name>LocobotTag/Visual</name>
           </script>
         </material>
