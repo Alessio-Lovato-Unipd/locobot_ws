@@ -8,6 +8,7 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(nav2_bringup REQUIRED)
+find_package(nav2_util REQUIRED)
 find_package(slam_toolbox REQUIRED)
 find_package(gazebo_ros REQUIRED)
 find_package(apriltag_ros REQUIRED)
@@ -19,6 +20,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(tf2_ros REQUIRED)
 
 #moveit dependencies
 find_package(moveit_core REQUIRED)
@@ -53,9 +55,19 @@ ament_target_dependencies(demo rclcpp
                                moveit_msgs)
 target_include_directories(demo PUBLIC include)
 
+
+# Tf remapper
+add_executable(tf_remapper src/LocobotTracker.cpp)
+ament_target_dependencies(tf_remapper rclcpp
+                                      geometry_msgs
+                                      tf2_ros)
+target_include_directories(tf_remapper PUBLIC include)
+
+
 # install targets
 install(TARGETS
   demo
+  tf_remapper
   DESTINATION lib/${PROJECT_NAME})
 
 # install directories

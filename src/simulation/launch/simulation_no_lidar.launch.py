@@ -56,7 +56,8 @@ from launch.substitutions import (
 from launch_ros.actions import Node, SetRemap
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
-
+from launch_ros.descriptions import ParameterFile
+from nav2_common.launch import RewrittenYaml
 
 
 def load_yaml(package_name, file_path):
@@ -144,156 +145,56 @@ def generate_launch_description():
     else:
         models_path = models
 
-    # MoveIt2 move_group node
-    config_path = PathJoinSubstitution([
-        FindPackageShare('interbotix_xslocobot_moveit'),
-        'config',
-    ])
-
-    robot_description_semantic = {
-        'robot_description_semantic':
-            construct_interbotix_xslocobot_semantic_robot_description_command(
-                robot_model='locobot_wx200',
-                config_path=config_path
-            ),
-    }
-
-    kinematics_config = PathJoinSubstitution([
-        FindPackageShare('interbotix_xslocobot_moveit'),
-        'config',
-        'kinematics.yaml',
-    ])
-
-    ompl_planning_pipeline_config = {
-        'move_group': {
-            'planning_plugin':
-                'ompl_interface/OMPLPlanner',
-            'request_adapters':
-                'default_planner_request_adapters/AddTimeOptimalParameterization '
-                'default_planner_request_adapters/FixWorkspaceBounds '
-                'default_planner_request_adapters/FixStartStateBounds '
-                'default_planner_request_adapters/FixStartStateCollision '
-                'default_planner_request_adapters/FixStartStatePathConstraints',
-            'start_state_max_bounds_error':
-                0.1,
-        }
-    }
-
-    ompl_planning_pipeline_yaml_file = load_yaml(
-        'interbotix_xslocobot_moveit', 'config/ompl_planning.yaml'
-    )
-    ompl_planning_pipeline_config['move_group'].update(ompl_planning_pipeline_yaml_file)
-
-    controllers_config = load_yaml(
-        'interbotix_xslocobot_moveit',
-        'config/controllers/mobile_wx200_controllers.yaml'
-    )
-
-    config_joint_limits = load_yaml(
-        'interbotix_xslocobot_moveit',
-        'config/joint_limits/mobile_wx200_joint_limits.yaml'
-    )
-
-    joint_limits = {
-        'robot_description_planning': config_joint_limits,
-    }
-
-    moveit_controllers = {
-        'moveit_simple_controller_manager':
-            controllers_config,
-        'moveit_controller_manager':
-            'moveit_simple_controller_manager/MoveItSimpleControllerManager',
-    }
-
-    trajectory_execution_parameters = {
-        'moveit_manage_controllers': True,
-        'trajectory_execution.allowed_execution_duration_scaling': 1.2,
-        'trajectory_execution.allowed_goal_duration_margin': 0.5,
-        'trajectory_execution.allowed_start_tolerance': 0.01,
-    }
-
-    planning_scene_monitor_parameters = {
-        'publish_planning_scene': True,
-        'publish_geometry_updates': True,
-        'publish_state_updates': True,
-        'publish_transforms_updates': True,
-        'publish_robot_description_semantic': True,
-    }
-
-    sensor_parameters = {
-        'sensors': [''],
-    }
-
-    remappings = [
-        (
-            'locobot/get_planning_scene',
-            '/locobot/get_planning_scene'
-        ),
-        (
-            '/arm_controller/follow_joint_trajectory',
-            '/locobot/arm_controller/follow_joint_trajectory'
-        ),
-        (
-            '/gripper_controller/follow_joint_trajectory',
-            '/locobot/gripper_controller/follow_joint_trajectory'
-        ),
-        (
-            '/robot_description',
-            '/locobot/robot_description'
-        ),
-        (
-            '/robot_description_semantic',
-            '/locobot/robot_description_semantic'
-        )
-    ]
-
-    move_group_node = Node(
-        package='moveit_ros_move_group',
-        executable='move_group',
-        parameters=[
-            {
-                'planning_scene_monitor_options': {
-                    'robot_description':
-                        'robot_description',
-                    'joint_state_topic':
-                        'locobot/joint_states',
-                },
-                'use_sim_time': True,
-            },
-            robot_description_semantic,
-            kinematics_config,
-            ompl_planning_pipeline_config,
-            trajectory_execution_parameters,
-            moveit_controllers,
-            planning_scene_monitor_parameters,
-            joint_limits,
-            sensor_parameters,
-        ],
-        remappings=remappings,
-        output={'both': 'screen'},
-    )
-
-
     # Navigation2 bringup launch
     package = FindPackageShare('simulation')
-    nav2_bringup_launch_file_dir = PathJoinSubstitution(
-        [FindPackageShare('nav2_bringup'), 'launch', 'bringup_launch.py']
+    nav2_launch_file_dir = PathJoinSubstitution(
+        [FindPackageShare('nav2_bringup'), 'launch', 'navigation_launch.py']
     )
 
-    nav2_bringup_launch = GroupAction(
+    configured_params = ParameterFile(
+        RewrittenYaml(
+            source_file=params_file,
+            root_key='',
+            param_rewrites={},
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+
+    nav2_launch = GroupAction(
         actions=[
             # Remap the cmd_vel topic published from 'Controller server' to the diffdrive_controller
             SetRemap(src='/cmd_vel', dst='/locobot/diffdrive_controller/cmd_vel_unstamped'),
             
             IncludeLaunchDescription(
-                PythonLaunchDescriptionSource([nav2_bringup_launch_file_dir]),
+                PythonLaunchDescriptionSource([nav2_launch_file_dir]),
                 launch_arguments={
-                    'map': map_yaml_file,
                     'params_file': params_file,
                     'use_sim_time': 'True',
+                    'autostart': 'True',
                 }.items()
-            )
+            ),
+            # Launch map server
+            Node(
+                package='nav2_map_server',
+                executable='map_server',
+                name='map_server',
+                output='screen',
+                parameters=[{'yaml_filename': map_yaml_file}],
+                remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
+            ),
+            # Activate lifecycle manager for map server
+            Node(
+                package='nav2_lifecycle_manager',
+                executable='lifecycle_manager',
+                name='lifecycle_map_server',
+                output='screen',
+                parameters=[{'node_names': ['map_server']},
+                            {'autostart': True},
+                            {'use_sim_time': True}],
+            ),
         ])
+
 
 
     # locobot simulation launch
@@ -303,7 +204,7 @@ def generate_launch_description():
             'use_sim_time': 'true',
             'hardware_type': 'gz_classic',
             'use_lidar': use_lidar,
-            'use_rviz': 'false',
+            'use_rviz': 'true',
             'use_camera': 'true',
             'external_urdf_loc': external_urdf_loc,
             'use_gazebo_debug': 'false',
@@ -328,7 +229,7 @@ def generate_launch_description():
         name='spawn_camera',
         arguments=['-entity', 'camera', '-file',
                         PathJoinSubstitution([FindPackageShare('simulation'), 'models', 'camera', 'model.sdf']),
-                        '-x', '0.0', '-y', '0.0', '-z', '3.0',
+                        '-x', '0.0', '-y', '0.0', '-z', '5.0',
                         '-R', '0.0', '-P', '0.0', '-Y', '0.0'],
         output='screen'
     )
@@ -347,19 +248,56 @@ def generate_launch_description():
         executable='apriltag_node',
         name='apriltag_node',
         parameters= [os.path.join(get_package_share_directory('simulation'), 'config', 'apriltag.yaml')],
-        remappings=[('/camera_info', '/env_camera/camera_info'),
-                    ('/image_rect', '/env_camera/image_raw'),
+        remappings=[('/camera_info', '/locobot/env_camera/camera_info'),
+                    ('/image_rect', '/locobot/env_camera/image_raw'),
                     ('/tf', '/tf_tag')],
 
     )
 
-    image_proc_node = Node(
-        package='image_proc',
-        executable='image_proc',
-        name='image_proc_node',
-        namespace='env_camera',
+    apriltag_static_broadcaster = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='locobot_tag_br',
+        arguments=[
+            '--x', '0.0',
+            '--y', '0.0',
+            '--z', '0.0',
+            '--roll', '0.0',
+            '--pitch', '0.0',
+            '--yaw', '-1.57076',
+            '--frame-id', 'apriltag_link',
+            '--child-frame-id', 'locobot_tag'
+        ],
         output='screen'
     )
+
+    map_static_broadcaster = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='locobot_tag_br',
+        arguments=[
+            '--x', '-1.0',
+            '--y', '0.0',
+            '--z', '0.0',
+            '--roll', '0.0',
+            '--pitch', '0.0',
+            '--yaw', '1.57076',
+            '--frame-id', 'map_tag',
+            '--child-frame-id', 'map'
+        ],
+        output='screen'
+    )
+
+    tf_remapper = Node(
+        package='simulation',
+        executable='tf_remapper',
+        name='tf_remapper',
+        output='screen',
+        parameters=[{'use_sim_time':True}],
+        remappings=[('/tf', '/tf_tag'),
+                    ('/env_camera/tf_locobot', '/tf')]
+    )
+    
 
     return LaunchDescription([
         SetEnvironmentVariable('GAZEBO_RESOURCE_PATH', value=resources_path),
@@ -370,12 +308,13 @@ def generate_launch_description():
         external_urdf_loc_launch_arg,
         map_yaml_file_launch_arg,
         params_file_launch_arg,
-        #move_group_node,
-        #nav2_bringup_launch,
+        nav2_launch,
         gazebo_simulation_launch,
         spawn_camera,
         spawn_apriltag,
-        #image_proc_node,
         apriltag_node,
+        tf_remapper,
+        apriltag_static_broadcaster,
+        map_static_broadcaster,
         #rviz,
     ])

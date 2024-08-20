@@ -16,6 +16,7 @@
   <depend>nav2_bringup</depend>
   <depend>slam_toolbox</depend>
   <depend>nav2_msgs</depend>
+  <depend>nav2_util</depend>
   <depend>geometry_msgs</depend>
   <depend>gazebo_ros</depend>
 
@@ -35,6 +36,7 @@
   <!-- Apriltag detection dependencies -->
   <depend>apriltag_ros</depend>
   <depend>image_proc</depend>
+  <depend>tf2_ros</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
