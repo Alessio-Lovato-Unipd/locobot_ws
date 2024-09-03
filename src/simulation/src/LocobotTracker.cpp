@@ -20,12 +20,18 @@ LocobotTracker::LocobotTracker(const string node_name, const string ns)
     this->declare_parameter("locobot_tag_frame", "locobot_tag", param_desc);
     param_desc.description = "Timer period [s] to look for new the apriltag tf";
     this->declare_parameter("timer_period", 0.1, param_desc);
+    param_desc.description = "Debug mode. Print errors in case of failure";
+    this->declare_parameter("debug", false, param_desc);
+    param_desc.description = "Look for the map_tag->camera tf";
+    this->declare_parameter("look_for_map_tag", false, param_desc);
 
     // Save parameters
     camera_frame_ = this->get_parameter("camera_frame").as_string();
     map_tag_frame_ = this->get_parameter("map_tag_frame").as_string();
     locobot_tag_frame_ = this->get_parameter("locobot_tag_frame").as_string();
     timer_period_ = this->get_parameter("timer_period").as_double();
+    debug_ = this->get_parameter("debug").as_bool();
+    look_for_map_tag_ = this->get_parameter("look_for_map_tag").as_bool();
 
     // Initialize the tf buffer and listener
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -40,7 +46,7 @@ LocobotTracker::LocobotTracker(const string node_name, const string ns)
 
 
 void LocobotTracker::TfCallback() {
-    // Save the last tf from the locobot tag to the camera frame
+    // Save the last tf from the locobot marker frame to the camera frame
     try {
         geometry_msgs::msg::TransformStamped t = tf_buffer_->lookupTransform(
                                                 locobot_tag_frame_, camera_frame_,
@@ -53,29 +59,35 @@ void LocobotTracker::TfCallback() {
         // Publish the TFMessage
         tf_publisher_->publish(tf_message);
     } catch (const tf2::TransformException & ex) {
-        RCLCPP_INFO(
-        this->get_logger(), "Could not transform %s to %s: %s",
-        locobot_tag_frame_.c_str(), camera_frame_.c_str(), ex.what());
-        return;
+        if (debug_) {
+            RCLCPP_INFO(
+                this->get_logger(), "Could not transform %s to %s: %s",
+                locobot_tag_frame_.c_str(), camera_frame_.c_str(), ex.what());
+                return;
+        }
     }
 
     // Republish the tf from the camera frame to the map frame to /tf_locobot topic
-    try {
-        geometry_msgs::msg::TransformStamped t = tf_buffer_->lookupTransform(
-                                                camera_frame_, map_tag_frame_,
-                                                tf2::TimePointZero);
-        // Change timestamp to now
-        t.header.stamp = this->get_clock()->now();
-        // Convert TransformStamped to TFMessage
-        tf2_msgs::msg::TFMessage tf_message;
-        tf_message.transforms.push_back(t);
-        // Publish the TFMessage
-        tf_publisher_->publish(tf_message);
-    } catch (const tf2::TransformException & ex) {
-        RCLCPP_INFO(
-        this->get_logger(), "Could not transform %s to %s: %s",
-        camera_frame_.c_str(), map_tag_frame_.c_str(), ex.what());
-        return;
+    if (look_for_map_tag_) {
+        try {
+            geometry_msgs::msg::TransformStamped t = tf_buffer_->lookupTransform(
+                                                    camera_frame_, map_tag_frame_,
+                                                    tf2::TimePointZero);
+            // Change timestamp to now
+            t.header.stamp = this->get_clock()->now();
+            // Convert TransformStamped to TFMessage
+            tf2_msgs::msg::TFMessage tf_message;
+            tf_message.transforms.push_back(t);
+            // Publish the TFMessage
+            tf_publisher_->publish(tf_message);
+        } catch (const tf2::TransformException & ex) {
+            if (debug_) {
+                RCLCPP_INFO(
+                    this->get_logger(), "Could not transform %s to %s: %s",
+                    camera_frame_.c_str(), map_tag_frame_.c_str(), ex.what());
+                    return;
+            }
+        }
     }
     
 }
