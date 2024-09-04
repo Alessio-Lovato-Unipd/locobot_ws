@@ -137,7 +137,7 @@ def generate_launch_description():
 
     camera_number_arg = DeclareLaunchArgument(
             'camera_number',
-            default_value='2',
+            default_value='1',
             description='number of cameras in the simulation (must be 1 or 2).',
     )
 
@@ -425,15 +425,25 @@ def generate_launch_description():
     # to find the camera topics
     wait_spawn_camera_services = TimerAction(
         period=5.0, #Delay in seconds
-        actions=[gazebo_simulation_launch]
+        actions=[include_markers_launch]
     )
 
     # Allow Gazebo to load the simulation before launching MoveIt2 and Navigation2
     wait_gazebo = TimerAction(
         period=10.0, #Delay in seconds
         actions=[move_group_node,
-                      nav2_launch,
-                      arm_to_sleep_position]
+                      nav2_launch]
+    )
+
+    # Wait for the move_group node to start before launching the arm_to_sleep_position node
+    wait_moveit = RegisterEventHandler(
+        event_handler=OnProcessStart(
+            target_action=move_group_node,
+            on_start= TimerAction(
+                period=5.0, #Delay in seconds
+                actions=[arm_to_sleep_position]
+            )
+        )
     )
 
 
@@ -448,9 +458,10 @@ def generate_launch_description():
         params_file_launch_arg,
         camera_number_arg,
     # Simulation launch
-        include_markers_launch,
+        gazebo_simulation_launch,
         wait_spawn_camera_services,
         wait_gazebo,
+        wait_moveit,
         depth_to_scan,
     # Rviz launch
         rviz,

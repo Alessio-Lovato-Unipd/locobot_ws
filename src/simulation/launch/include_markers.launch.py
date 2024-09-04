@@ -69,8 +69,8 @@ def launch_setup(context):
         executable='apriltag_node',
         name='apriltag_node_1',
         parameters= [os.path.join(get_package_share_directory('simulation'), 'config', 'apriltag.yaml')],
-        remappings=[('/camera_info', '/env_camera_1/camera_info'),
-                    ('/image_rect', '/env_camera_1/image_raw'),
+        remappings=[('/camera_info', '/locobot/env_camera_1/camera_info'),
+                    ('/image_rect', '/locobot/env_camera_1/image_raw'),
                     ('/tf', '/tf_marker')],
     )
 
@@ -80,8 +80,8 @@ def launch_setup(context):
         executable='apriltag_node',
         name='apriltag_node_2',
         parameters= [os.path.join(get_package_share_directory('simulation'), 'config', 'apriltag.yaml')],
-        remappings=[('/camera_info', '/env_camera_2/camera_info'),
-                    ('/image_rect', '/env_camera_2/image_raw'),
+        remappings=[('/camera_info', '/locobot/env_camera_2/camera_info'),
+                    ('/image_rect', '/locobot/env_camera_2/image_raw'),
                     ('/tf', '/tf_marker')],
         condition=IfCondition(PythonExpression(['"', number, '" == "2"']))
     )
@@ -127,13 +127,13 @@ def launch_setup(context):
         package='simulation',
         executable='tf_remapper',
         name='tf_remapper_1',
-        namespace='env_camera_1',
+        namespace='locobot/env_camera_1',
         output='screen',
         parameters=[{'use_sim_time':True},
                     {'camera_frame':'env_camera_1_frame'},
                     {'look_for_map_tag': True}],
         remappings=[('/tf', '/tf_marker'),
-                    ('/env_camera_1/tf_locobot', '/tf')]
+                    ('/locobot/env_camera_1/tf_locobot', '/tf')]
     )
 
     # Node that republish the tf from the apriltag_node_2 to the /tf topic
@@ -141,12 +141,12 @@ def launch_setup(context):
         package='simulation',
         executable='tf_remapper',
         name='tf_remapper_2',
-        namespace='env_camera_2',
+        namespace='locobot/env_camera_2',
         output='screen',
         parameters=[{'use_sim_time':True},
                     {'camera_frame':'env_camera_2_frame'}],
         remappings=[('/tf', '/tf_marker'),
-                    ('/env_camera_2/tf_locobot', '/tf')],
+                    ('/locobot/env_camera_2/tf_locobot', '/tf')],
         condition=IfCondition(PythonExpression(['"', number, '" == "2"']))
     )
 
