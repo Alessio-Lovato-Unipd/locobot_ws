@@ -16,6 +16,9 @@
 #include <memory>
 #include <string>
 #include <future>
+#include <thread>
+#include <vector>
+#include <utility>
 
 // ROS 2
 #include <rclcpp/rclcpp.hpp>
@@ -38,7 +41,8 @@ using GoalHandle = rclcpp_action::ClientGoalHandle<NavigateToPose>;
 enum class ArmPose {
     HOME,
     SLEEP,
-    UPRIGHT
+    UPRIGHT,
+    UNKNOWN
 };
 
 /**
@@ -47,8 +51,70 @@ enum class ArmPose {
 enum class GripperState {
     HOME,
     RELEASED,
-    GRASPING
+    GRASPING,
+    UNKNOWN
 };
+
+/**
+ * @brief Class to store the status of the arm.
+ */
+class ArmStatus {
+    public:
+        /**
+         * @brief Construct a new arm_status object.
+         * 
+         * The constructor initializes the arm pose to the specified pose.
+         * 
+         * @param pose The arm pose. Default is ArmPose::SLEEP.
+         */
+        ArmStatus(const ArmPose pose = ArmPose::UNKNOWN) : pose_(pose) {};
+
+        // Functions
+        /**
+         * @brief Save the arm pose and fripper state.
+         * 
+         * @param pose The arm pose to save.
+         * @param state The gripper state to save. 
+         */
+        void save(const ArmPose pose, const GripperState state) {pose_ = pose; gripper_ = state;};
+
+        /**
+         * @brief Set the arm in movement or planning status.
+         * 
+         * @param moving True if the arm is moving or planning, false otherwise.
+         */
+        void in_motion(bool moving) {in_motion_ = moving;};
+
+        /**
+         * @brief Set the arm in error status.
+         * 
+         * @param error True if the arm is in error, false otherwise.
+         */
+        void in_error(bool error) {in_error_ = error;};
+
+        // Access functions
+
+        // Return true if the arm is moving or planning, false otherwise
+        bool is_moving() const {return in_motion_;}; 
+        // Return true if the arm is in error (planning or execution failed), false otherwise
+        bool is_error() const {return in_error_;};
+        // Return the current arm pose
+        ArmPose get_arm_pose() const {return pose_;};
+        // Return the current gripper state
+        GripperState get_gripper_state() const {return gripper_;};
+
+    private:
+        ArmPose pose_;             // The current arm pose
+        GripperState gripper_;     // The current gripper state
+        bool in_motion_{false};    // True if the arm is moving, false otherwise
+        bool in_error_{false};     // True if the arm is in error, false otherwise
+};
+
+
+
+
+
+
 
 /**
  * @brief LocobotControl class performs the control of the Locobot arm, gripper and base.
@@ -73,8 +139,19 @@ public:
      * @return A new LocobotControl object.
      */
     explicit LocobotControl(const string name = "locobot_controller", const string ns = "", 
-                            const rclcpp::NodeOptions & options = rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
-    
+                            const rclcpp::NodeOptions & options = rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true),
+                            const ArmPose arm_pose = ArmPose::UNKNOWN);
+    /**
+     * @brief Destructor
+     * 
+     * Waits for the arm to stop moving before destroying the object.
+     */
+    ~LocobotControl() {
+        while (arm_status_.is_moving()) {
+           // Wait for the active threads to finish
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    };
     
     // Functions
     /**
@@ -86,32 +163,79 @@ public:
     void MoveBaseTo(const geometry_msgs::msg::PoseStamped &pose, const uint timeout = 2);
 
     /**
-     * @brief Move the robot arm to a specified pose.
+     * @brief Return the distance remaining to the goal.
+     */
+    float NavigationDistanceRemaining() const {return remaining_distance_;};
+
+    /**
+     * @brief Move the robot arm to a specified pose. Updates the arm status to moving.
+     * 
+     * @note This function invokes a detached thread to execute the plan to move 
+     * the arm to the specified pose. Please make sure the condition 
+     * isArmMoving() is false before performing a rclcpp::shutdown(), otherwise 
+     * the execution will be interrupted due to a bad ROS2 context.
      * 
      * @param pose The predefined pose to move the robot arm to.
      * 
-     * @return True if the arm was moved successfully, false otherwise.
+     * @param interface_name The name of the MoveGroupInterface to use. Default is 'interbotix_arm'.
+     * 
+     * @return True if the arm movement can be sent to the planning pipeline, false otherwise.
      */
-    bool SetArmPose(const ArmPose pose);
+    bool SetArmPose(const ArmPose pose, const string interface_name = "interbotix_arm");
 
     /**
-     * @brief Move the gripper to a specified pose.
+     * @brief Move the gripper to a specified pose. Updates the arm status to moving.
+     * 
+     * @note This function invokes a detached thread to execute the plan to move 
+     * the arm to the specified pose. Please make sure the condition 
+     * isArmMoving() is false before performing a rclcpp::shutdown(), otherwise 
+     * the execution will be interrupted due to a bad ROS2 context.
      * 
      * @param pose The predefined pose to move the gripper to.
      * 
-     * @return True if the gripper was moved successfully, false otherwise.
+     * @param interface_name The name of the MoveGroupInterface to use. Default is 'interbotix_gripper'.
+     * 
+     * @return True if the gripper movement can be send to the planning pipeline, false otherwise.
      */
-    bool SetGripper(const GripperState state);
+    bool SetGripper(const GripperState state, const string interface_name = "interbotix_gripper");
+
+    /**
+     * @brief Stop the arm movement if it is in progress.
+     * 
+     * @param arm_interface_name The name of the MoveGroupInterface for the arm. Default is 'interbotix_arm'.
+     * @param gripper_interface_name The name of the MoveGroupInterface for the gripper. Default is 'interbotix_gripper'.
+     */
+    void StopArm(const string arm_interface_name = "interbotix_arm", 
+                    const string gripper_interface_name = "interbotix_gripper");
+
+    /**
+     * @brief Reset the arm status to not moving and not in error.
+     */
+    void ResetArmStatus() {arm_status_.in_motion(false); arm_status_.in_error(false);};
+
+
+    // Return true if the arm is moving or planning, false otherwise
+    bool isArmMoving() const {return arm_status_.is_moving();};
+    // Return true if the arm is in error (planning or execution failed), false otherwise
+    bool isArmInError() const {return arm_status_.is_error();};
+    // Return the current arm pose
+    ArmPose ArmCurrentPose() const {return arm_status_.get_arm_pose();};
+    GripperState GripperCurrentState() const {return arm_status_.get_gripper_state();};
 
 
 private:
     // Action client for the navigation stack
     rclcpp_action::Client<NavigateToPose>::SharedPtr client_ptr_;
+    
 
-    // Callbacks for the client
+    // Callbacks for the action client
     void goal_response_callback(GoalHandle::SharedPtr goal_handle);
     void feedback_callback(GoalHandle::SharedPtr, const std::shared_ptr<const NavigateToPose::Feedback> feedback);
     void result_callback(const GoalHandle::WrappedResult &result);
+
+    // Variables
+    float remaining_distance_{0.0}; // Distance remaining to the navigation goal
+    ArmStatus arm_status_;          // Status of the arm
 
     // Functions
     /**
@@ -136,12 +260,17 @@ private:
      * The method executes the MoveIt plan using the MoveGroupInterface.
      * 
      * @param move_group_interface The MoveGroupInterface to execute the plan.
-     * 
-     * @return True if the plan was executed successfully, false otherwise.
+     * @param next_pose The next pose to move the arm to.
+     * @param next_gripper_state The next gripper state to move the gripper to.
      */
-    bool ExecutePlan(moveit::planning_interface::MoveGroupInterface &move_group_interface);
+    void ExecutePlan(const string interface_name, const ArmPose next_pose, 
+                                    const GripperState next_gripper_state);
 
 };
+
+
+
+
 
 /**
  * @brief Convert coordinates to a PoseStamped message.

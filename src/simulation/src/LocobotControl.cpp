@@ -2,7 +2,8 @@
 
 // NODE
 
-LocobotControl::LocobotControl(const string name, const string ns, const rclcpp::NodeOptions &options)
+LocobotControl::LocobotControl(const string name, const string ns, const rclcpp::NodeOptions &options,
+                                const ArmPose arm_pose)
 : Node(name, ns, options) {
     this->client_ptr_ = rclcpp_action::create_client<NavigateToPose>(
     this->get_node_base_interface(),
@@ -10,24 +11,7 @@ LocobotControl::LocobotControl(const string name, const string ns, const rclcpp:
     this->get_node_logging_interface(),
     this->get_node_waitables_interface(),
     "navigate_to_pose"); // Action server name
-}
-
-
-bool LocobotControl::ExecutePlan(moveit::planning_interface::MoveGroupInterface &move_group_interface) {
-    
-    moveit::planning_interface::MoveGroupInterface::Plan plan;
-    if (static_cast<bool>(move_group_interface.plan(plan))) {
-        // Execute the plan
-        if (move_group_interface.execute(plan)) {
-            return true;
-        } else {
-            RCLCPP_ERROR(get_logger(), "Execution failed!");
-            return false;
-        }
-    } else {
-        RCLCPP_ERROR(get_logger(), "Planning failed!");
-        return false;
-    }
+    arm_status_ = ArmStatus(arm_pose);
 }
 
 // BASE
@@ -56,7 +40,6 @@ void LocobotControl::MoveBaseTo(const geometry_msgs::msg::PoseStamped &pose, con
     auto goal_handle_future = client_ptr_->async_send_goal(goal, send_goal_options);
 }
 
-
 void LocobotControl::goal_response_callback(GoalHandle::SharedPtr goal_handle) {
     if (!goal_handle) {
         RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
@@ -70,6 +53,7 @@ void LocobotControl::goal_response_callback(GoalHandle::SharedPtr goal_handle) {
 
 void LocobotControl::feedback_callback(GoalHandle::SharedPtr, const std::shared_ptr<const NavigateToPose::Feedback> feedback) {
     RCLCPP_INFO(this->get_logger(), "Remaining distance: %f m", feedback->distance_remaining);
+    this->remaining_distance_ = feedback->distance_remaining;
 }
 
 
@@ -92,20 +76,75 @@ void LocobotControl::result_callback(const GoalHandle::WrappedResult &result) {
 
 // ARM
 
-bool LocobotControl::SetArmPose(const ArmPose pose) {
+bool LocobotControl::SetArmPose(const ArmPose pose, const string interface_name) {
  
-    // Set a target pose
-    auto move_group_interface = MoveGroupInterface(shared_from_this(),"interbotix_arm");
+    // Verify the pose is not unknown
+    if (pose == ArmPose::UNKNOWN) {
+        RCLCPP_ERROR(get_logger(), "It is not possible to move the arm to an unknown pose");
+        return false;
+    }
+
+    // Check if the arm is already in the target pose
+    if (pose == arm_status_.get_arm_pose()) {
+        RCLCPP_INFO(get_logger(), "The arm is already in the target pose");
+        return true;
+    }
+
+    // Check if the pose can be converted to a string
     string target = ArmPose_to_string(pose);
     if (target.empty()) {
         RCLCPP_ERROR(get_logger(), "The target pose is not defined in function ArmPose_to_string()");
         return false;
-    }  // The pose is not defined in the switch case in ArmPose_to_string
-    move_group_interface.setNamedTarget(target);
+    }  
 
-    // Create a plan to that target pose
+    // Publish info message
     RCLCPP_INFO(get_logger(), "Planning arm movement to %s", ArmPose_to_string(pose).c_str());
-    return ExecutePlan(move_group_interface);
+
+    // Execute the plan in another thread
+    arm_status_.in_motion(true);
+    std::thread execution(&LocobotControl::ExecutePlan, this, interface_name, pose, arm_status_.get_gripper_state());
+    execution.detach(); // Detach the thread
+    return true;
+}
+
+void LocobotControl::ExecutePlan(const string interface_name, const ArmPose next_pose, const GripperState next_gripper_state) {
+
+    // Ensure the ROS2 context is valid
+    if (!rclcpp::ok()) {
+        RCLCPP_ERROR(get_logger(), "ROS2 context is not valid");
+        return;
+    }
+
+    // Create the MoveGroupInterface
+    auto move_group_interface = MoveGroupInterface(shared_from_this(), interface_name);
+    move_group_interface.setNamedTarget(ArmPose_to_string(next_pose));
+
+    // Create a plan
+    moveit::planning_interface::MoveGroupInterface::Plan plan;
+    if (move_group_interface.plan(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+        // Execute the plan
+        if (move_group_interface.execute(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+            arm_status_.save(next_pose, next_gripper_state);
+            arm_status_.in_motion(false);
+            return;
+        } else {
+            RCLCPP_ERROR(get_logger(), "Execution failed!");
+        }
+    } else {
+        RCLCPP_ERROR(get_logger(), "Planning failed!");
+    }
+    arm_status_.in_motion(false);
+    arm_status_.in_error(true);
+}
+
+
+void LocobotControl::StopArm(const string arm_interface_name, const string gripper_interface_name) {
+    auto move_group_interface = MoveGroupInterface(shared_from_this(), arm_interface_name);
+    move_group_interface.stop();
+    move_group_interface = MoveGroupInterface(shared_from_this(),gripper_interface_name);
+    move_group_interface.stop();
+    arm_status_.in_motion(false);
+    arm_status_.save(ArmPose::UNKNOWN, GripperState::UNKNOWN);
 }
 
 
@@ -125,19 +164,35 @@ string LocobotControl::ArmPose_to_string(const ArmPose pose) {
 
 // GRIPPER
 
-bool LocobotControl::SetGripper(const GripperState state) {
-    // Set a target pose
-    auto move_group_interface = MoveGroupInterface(shared_from_this(),"interbotix_gripper");
+bool LocobotControl::SetGripper(const GripperState state, const string interface_name) {
+
+    // Verify the state is not unknown
+    if (state == GripperState::UNKNOWN) {
+        RCLCPP_ERROR(get_logger(), "It is not possible to move the gripper to an unknown state");
+        return false;
+    } 
+
+    // Check if the arm is already in the target state
+    if (state == arm_status_.get_gripper_state()) {
+        RCLCPP_INFO(get_logger(), "The gripper is already in the target state");
+        return true;
+    }
+
+    // Check if the state can be converted to a string
     string target = GripperState_to_string(state);
     if (target.empty()) {
-        RCLCPP_ERROR(get_logger(), "The target pose is not defined in function GripperState_to_string()");
+        RCLCPP_ERROR(get_logger(), "The target state is not defined in function ArmState_to_string()");
         return false;
-    }
-    move_group_interface.setNamedTarget(target);
+    }  
 
-    // Create a plan to that target pose
-    RCLCPP_INFO(get_logger(), "Planning gripper movement to %s", GripperState_to_string(state).c_str());
-    return ExecutePlan(move_group_interface);
+    // Publish info message
+    RCLCPP_INFO(get_logger(), "Planning arm movement to %s", GripperState_to_string(state).c_str());
+
+    // Execute the plan in another thread
+    arm_status_.in_motion(true);
+    std::thread execution(&LocobotControl::ExecutePlan, this, interface_name, arm_status_.get_arm_pose(), state);
+    execution.detach(); // Detach the thread
+    return true;
 }
 
 

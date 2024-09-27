@@ -1,0 +1,6 @@
+# Service to request the clearing of ERROR or 
+# ABORT state from the state machine. It also
+# clears the last error message.
+
+---
+bool successful
