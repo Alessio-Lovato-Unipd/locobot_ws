@@ -23,7 +23,7 @@
 // ROS 2
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
-#include "rclcpp_components/register_node_macro.hpp"
+#include <rclcpp/duration.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include "nav2_msgs/action/navigate_to_pose.hpp"
@@ -65,9 +65,11 @@ class ArmStatus {
          * 
          * The constructor initializes the arm pose to the specified pose.
          * 
-         * @param pose The arm pose. Default is ArmPose::SLEEP.
+         * @param arm_pose The arm pose. Default is ArmPose::SLEEP.
+         * @param gripper The gripper state. Default is GripperState::HOME.
          */
-        ArmStatus(const ArmPose pose = ArmPose::UNKNOWN) : pose_(pose) {};
+        ArmStatus(const ArmPose pose = ArmPose::SLEEP, const GripperState gripper = GripperState::HOME) 
+                : pose_(pose), gripper_(gripper) {};
 
         // Functions
         /**
@@ -76,7 +78,7 @@ class ArmStatus {
          * @param pose The arm pose to save.
          * @param state The gripper state to save. 
          */
-        void save(const ArmPose pose, const GripperState state) {pose_ = pose; gripper_ = state;};
+        void updateStatus(const ArmPose pose, const GripperState gripper) {pose_ = pose; gripper_ = gripper;};
 
         /**
          * @brief Set the arm in movement or planning status.
@@ -88,9 +90,9 @@ class ArmStatus {
         /**
          * @brief Set the arm in error status.
          * 
-         * @param error True if the arm is in error, false otherwise.
+         * @param in_error True if the arm is in error, false otherwise.
          */
-        void in_error(bool error) {in_error_ = error;};
+        void errorState(bool in_error) {in_error_ = in_error;};
 
         // Access functions
 
@@ -111,6 +113,66 @@ class ArmStatus {
 };
 
 
+class NavigationStatus {
+    public:
+        // Constructor
+        NavigationStatus() {};
+
+        // Functions
+
+        /**
+         * @brief Save the distance remaining to the goal and the estimated time of arrival.
+         * 
+         * @param distance The distance remaining to the goal.
+         * @param ETA The estimated time of arrival.
+         */
+        void updateStatus(const float distance, const double ETA) {remaining_distance_ = distance;
+                                                                    remaining_time_ = ETA;};
+
+        /**
+         * @brief Set the navigation in progress status.
+         * 
+         * @param state True if the navigation is in progress, false otherwise.
+         */
+        void startNavigation() {in_progress_ = true;};
+
+        /**
+         * @brief End the navigation status.
+         * 
+         * @param state The result from the navigation action server.
+         */
+        void stopNavigation(const rclcpp_action::ResultCode state) {in_progress_ = false; navigation_result_ = state;};
+
+        /**
+         * @brief Set the navigation in error status.
+         * 
+         * @param in_error True if the navigation is in error, false otherwise.
+         */
+        void errorState(bool in_error) {in_error_ = in_error;};
+
+        // Access functions
+
+        // Return the distance remaining to the navigation goal
+        float getDistance() const {return remaining_distance_;};
+        // Return the estimated time of arrival
+        double getETA() const {return remaining_time_;};
+        // Return true if the navigation is in progress, false otherwise
+        bool isMoving() const {return in_progress_;};
+        // Return true if the navigation is in error, false otherwise
+        bool isError() const {return in_error_;};
+        // Return the result of the navigation action server
+        rclcpp_action::ResultCode getResult() const {return navigation_result_;};
+
+    private:
+
+        // Variables
+
+        float remaining_distance_{0.0}; // Distance remaining to the navigation goal
+        double remaining_time_{0.0}; // Time remaining to the navigation goal
+        bool in_progress_{false}; // True if the navigation is in progress, false otherwise
+        bool in_error_{false}; // True if the navigation is in error, false otherwise
+        rclcpp_action::ResultCode navigation_result_{rclcpp_action::ResultCode::UNKNOWN}; // Result of the navigation action server
+};
 
 
 
@@ -165,7 +227,7 @@ public:
     /**
      * @brief Return the distance remaining to the goal.
      */
-    float NavigationDistanceRemaining() const {return remaining_distance_;};
+    float NavigationDistanceRemaining() const {return navigation_status_.getDistance();};
 
     /**
      * @brief Move the robot arm to a specified pose. Updates the arm status to moving.
@@ -211,17 +273,28 @@ public:
     /**
      * @brief Reset the arm status to not moving and not in error.
      */
-    void ResetArmStatus() {arm_status_.in_motion(false); arm_status_.in_error(false);};
+    void ResetArmStatus() {arm_status_.errorState(false); arm_status_.errorState(false);};
 
 
     // Return true if the arm is moving or planning, false otherwise
     bool isArmMoving() const {return arm_status_.is_moving();};
     // Return true if the arm is in error (planning or execution failed), false otherwise
     bool isArmInError() const {return arm_status_.is_error();};
+    // Return true if the navigation is in progress, false otherwise
+    bool isNavigating() const {return navigation_status_.isMoving();};
+    // Return true if the navigation is in error, false otherwise
+    bool isNavigationInError() const {return navigation_status_.isError();};
+    // Return the result of the navigation action server
+    rclcpp_action::ResultCode NavigationResult() const {return navigation_status_.getResult();};
+    // Return the estimated time of arrival
+    double NavigationETA() const {return navigation_status_.getETA();};
+    // Return the remaining distance to the navigation goal
+    float NavigationDistance() const {return navigation_status_.getDistance();};
     // Return the current arm pose
     ArmPose ArmCurrentPose() const {return arm_status_.get_arm_pose();};
     GripperState GripperCurrentState() const {return arm_status_.get_gripper_state();};
 
+    bool cancelNavigationGoal();
 
 private:
     // Action client for the navigation stack
@@ -234,8 +307,8 @@ private:
     void result_callback(const GoalHandle::WrappedResult &result);
 
     // Variables
-    float remaining_distance_{0.0}; // Distance remaining to the navigation goal
     ArmStatus arm_status_;          // Status of the arm
+    NavigationStatus navigation_status_; // Status of the navigation
 
     // Functions
     /**

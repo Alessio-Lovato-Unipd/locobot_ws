@@ -17,6 +17,7 @@
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 
+
 // Services and actions
 #include "simulation_interfaces/srv/last_error.hpp"
 #include "simulation_interfaces/srv/clear_error.hpp"
@@ -230,7 +231,14 @@ private:
      * @return The absolute distance between the robot and the human in meters. If an error 
      * occurs, the function returns -1.0.
      */
-    double distance_to_human();
+    double distance_to_human() const;
+
+    /**
+     * @brief Obtains the pose of the human relative to the map frame.
+     * 
+     * @return The pose of the human relative to the map frame.
+     */
+    geometry_msgs::msg::PoseStamped GetHumanPose() const;
 
     /**
      * @brief Convert the state enum to a string.

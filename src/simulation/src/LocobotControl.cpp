@@ -5,12 +5,25 @@
 LocobotControl::LocobotControl(const string name, const string ns, const rclcpp::NodeOptions &options,
                                 const ArmPose arm_pose)
 : Node(name, ns, options) {
+
+    // Get parameters
+    auto param_desc = rcl_interfaces::msg::ParameterDescriptor{};
+    param_desc.description = "Name of the navigation server";
+    this->declare_parameter("navigation_server", "navigate_to_pose", param_desc);
+    std::string navigation_server_name_ = this->get_parameter("navigation_server").as_string();
+
+    if (navigation_server_name_.empty()) {
+        RCLCPP_ERROR(this->get_logger(), "Navigation server name is empty");
+        rclcpp::shutdown();
+        return;
+    }
+
     this->client_ptr_ = rclcpp_action::create_client<NavigateToPose>(
     this->get_node_base_interface(),
     this->get_node_graph_interface(),
     this->get_node_logging_interface(),
     this->get_node_waitables_interface(),
-    "navigate_to_pose"); // Action server name
+    navigation_server_name_);
     arm_status_ = ArmStatus(arm_pose);
 }
 
@@ -37,13 +50,14 @@ void LocobotControl::MoveBaseTo(const geometry_msgs::msg::PoseStamped &pose, con
 
     NavigateToPose::Goal goal;
     goal.pose = pose;
+    navigation_status_.startNavigation();
     auto goal_handle_future = client_ptr_->async_send_goal(goal, send_goal_options);
 }
 
 void LocobotControl::goal_response_callback(GoalHandle::SharedPtr goal_handle) {
     if (!goal_handle) {
         RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
-        rclcpp::shutdown();
+        navigation_status_.stopNavigation(rclcpp_action::ResultCode::ABORTED);
         return;
     } else {
         RCLCPP_INFO(this->get_logger(), "Goal accepted by server, waiting for result");
@@ -52,25 +66,42 @@ void LocobotControl::goal_response_callback(GoalHandle::SharedPtr goal_handle) {
 
 
 void LocobotControl::feedback_callback(GoalHandle::SharedPtr, const std::shared_ptr<const NavigateToPose::Feedback> feedback) {
-    RCLCPP_INFO(this->get_logger(), "Remaining distance: %f m", feedback->distance_remaining);
-    this->remaining_distance_ = feedback->distance_remaining;
+    // Update the navigation status
+    rclcpp::Duration estimated_time_remaining{feedback->estimated_time_remaining};
+    double seconds = estimated_time_remaining.seconds();
+    navigation_status_.updateStatus(feedback->distance_remaining, seconds);
+    //RCLCPP_INFO(this->get_logger(), "Remaining distance: %f m", feedback->distance_remaining);
 }
 
 
 void LocobotControl::result_callback(const GoalHandle::WrappedResult &result) {
+    navigation_status_.stopNavigation(result.code);
     switch (result.code) {
         case rclcpp_action::ResultCode::SUCCEEDED:
             RCLCPP_INFO(this->get_logger(), "Goal succeeded");
             break;
         case rclcpp_action::ResultCode::ABORTED:
+            navigation_status_.errorState(true);
             RCLCPP_INFO(this->get_logger(), "Goal was aborted");
             break;
         case rclcpp_action::ResultCode::CANCELED:
             RCLCPP_INFO(this->get_logger(), "Goal was canceled");
             break;
         default:
+            navigation_status_.errorState(true);
             RCLCPP_ERROR(this->get_logger(), "Unknown result code");
             break;
+    }
+}
+
+bool LocobotControl::cancelNavigationGoal() {
+    auto future = client_ptr_->async_cancel_all_goals();
+    auto result = future.get();
+
+    if (result->return_code == action_msgs::srv::CancelGoal::Response::ERROR_NONE) {
+        return true;
+    } else {
+        return false;
     }
 }
 
@@ -124,7 +155,7 @@ void LocobotControl::ExecutePlan(const string interface_name, const ArmPose next
     if (move_group_interface.plan(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
         // Execute the plan
         if (move_group_interface.execute(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-            arm_status_.save(next_pose, next_gripper_state);
+            arm_status_.updateStatus(next_pose, next_gripper_state);
             arm_status_.in_motion(false);
             return;
         } else {
@@ -134,7 +165,7 @@ void LocobotControl::ExecutePlan(const string interface_name, const ArmPose next
         RCLCPP_ERROR(get_logger(), "Planning failed!");
     }
     arm_status_.in_motion(false);
-    arm_status_.in_error(true);
+    arm_status_.errorState(true);
 }
 
 
@@ -144,7 +175,7 @@ void LocobotControl::StopArm(const string arm_interface_name, const string gripp
     move_group_interface = MoveGroupInterface(shared_from_this(),gripper_interface_name);
     move_group_interface.stop();
     arm_status_.in_motion(false);
-    arm_status_.save(ArmPose::UNKNOWN, GripperState::UNKNOWN);
+    arm_status_.updateStatus(ArmPose::UNKNOWN, GripperState::UNKNOWN);
 }
 
 

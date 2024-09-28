@@ -34,17 +34,37 @@ void StateMachine::nextState() {
 
 
         case States::SECURE_ARM:  // Send the arm to the secure position
-            SetArmPose(ArmPose::SLEEP);
+            if (ArmCurrentPose() != ArmPose::SLEEP)
+                SetArmPose(ArmPose::SLEEP);
             state_ = States::WAIT_ARM_SECURING;
             break;
 
 
         case States::WAIT_ARM_SECURING:  // Wait for the arm to be secured
             if (!isArmMoving()) {
-                state_ = States::COMPLETED;
-            } else if (isArmInError()) {
-                machineError("Arm securing failed");
+                state_ = States::SEND_NAV_GOAL;
+                if (isArmInError())
+                    machineError("Arm securing failed");
             }
+            break;
+
+        case States::SEND_NAV_GOAL:  // Send the navigation goal to the navigation stack
+            MoveBaseTo(GetHumanPose());
+            state_ = States::WAIT_NAVIGATION;
+            break;
+
+        case States::WAIT_NAVIGATION:  // Wait for the navigation to reach the goal
+            if (!isNavigating()) {
+                state_ = States::NAVIGATION_COMPLETED;
+                if (isNavigationInError())
+                    machineError("Navigation failed");
+            }
+            break;
+
+        case States::NAVIGATION_COMPLETED:  // Extend the arm to deliver the object
+            state_ = States::COMPLETED;
+            //SetArmPose(ArmPose::UPRIGHT);
+            //state_ = States::WAIT_ARM_EXTENDING;
             break;
 
         case States::COMPLETED:  // The task has been completed
@@ -60,17 +80,24 @@ void StateMachine::nextState() {
 
 
         case States::ABORTING:  // The machine is aborting
-            result_ =  Result::ABORTING;
-            StopArm(); // Stop the arm movement
+            result_ = Result::ABORTING;
             state_ = States::ABORTED;
+            StopArm(); // Stop the arm movement
+
+            // N.B. Arm will be in error state due to abortion of ExecutePlan
+            //      The error state is cleared in the clear_error() function
+
+            // Stop the navigation
+            if (!cancelNavigationGoal())
+                    machineError("Navigation cancel failed");
+    
             break;
+
 
         case States::ABORTED:  // The machine is aborted
             result_ = Result::ABORTED;
             break;
     }
-
-    // Spin the robot control object
 }
 
 
@@ -127,12 +154,16 @@ void StateMachine::spinMachine(const std::shared_ptr<GoalHandleStateMachine> goa
     status = static_cast<uint8_t>(state_);
     goal_handle->publish_feedback(feedback);
     RCLCPP_INFO(this->get_logger(), "Inizio loop");
+    States last_status = state_;
     // Main loop
     while (rclcpp::ok()) {
         if (result_ != Result::RUNNING && result_ != Result::ABORTING && result_ != Result::INITIALIZED) {
             break;
         }
-        RCLCPP_INFO(this->get_logger(), "Status: %s", state_to_string(state_).c_str());
+        if (last_status != state_) {
+            last_status = state_;
+            RCLCPP_INFO(this->get_logger(), "Status: %s", state_to_string(state_).c_str());
+        }
         // Check if the goal has been canceled
 
         nextState();
@@ -158,7 +189,7 @@ bool StateMachine::clear_error() {
         state_ = States::IDLE;
         result_ = Result::INITIALIZED;
         errorMsg_ = "";
-        // If an aborted request has benn made, Moveit throws an error but the machine is not in error
+        // If an aborted request has been made, Moveit throws an error but the machine is not in error
         if (requestedAbort_){
             requestedAbort_ = false;
             ResetArmStatus();
@@ -188,7 +219,7 @@ bool StateMachine::tf_available() {
     return lookup_tf(human_frame_, map_frame_) && lookup_tf(robot_frame_, map_frame_);
 }
 
-double StateMachine::distance_to_human() {  
+double StateMachine::distance_to_human() const {  
     try {
         // Get pose of the human and robot
         geometry_msgs::msg::TransformStamped human_tf, robot_tf;
@@ -209,6 +240,22 @@ double StateMachine::distance_to_human() {
 }
 
 
+geometry_msgs::msg::PoseStamped  StateMachine::GetHumanPose() const {
+    // Get the pose of the human relative to the map frame
+    geometry_msgs::msg::TransformStamped human_tf;
+    human_tf = tf_buffer_->lookupTransform(human_frame_, map_frame_, tf2::TimePointZero);
+    geometry_msgs::msg::PoseStamped pose;
+    pose.header.frame_id = map_frame_;
+    pose.pose.position.x = human_tf.transform.translation.x;
+    pose.pose.position.y = human_tf.transform.translation.y;
+    pose.pose.position.z = 0.0; // Navigation is 2D
+    pose.pose.orientation = human_tf.transform.rotation;
+    return pose;
+}
+
+
+
+
 std::string StateMachine::state_to_string(const States state) const {
     // Return the string representation of the States enum
     switch (state) {
@@ -218,6 +265,12 @@ std::string StateMachine::state_to_string(const States state) const {
             return "SECURE_ARM";
         case States::WAIT_ARM_SECURING:
             return "WAIT_ARM_SECURING";
+        case States::SEND_NAV_GOAL:
+            return "SEND_NAV_GOAL";
+        case States::WAIT_NAVIGATION:
+            return "WAIT_NAVIGATION";
+        case States::NAVIGATION_COMPLETED:
+            return "NAVIGATION_COMPLETED";
         case States::COMPLETED:
             return "COMPLETED";
         case States::ERROR:
