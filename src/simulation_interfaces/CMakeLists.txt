@@ -26,6 +26,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/StateMachine.action"
   "srv/LastError.srv"
   "srv/ClearError.srv"
+  "srv/ControlGripper.srv"
 )
 
 ament_package()
