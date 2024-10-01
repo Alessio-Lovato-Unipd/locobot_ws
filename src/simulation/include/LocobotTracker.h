@@ -47,11 +47,11 @@ class LocobotTracker : public rclcpp::Node {
         // Broadcaster to the locobot tf relative to the map frame
         rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr tf_publisher_;
         // Listener to the tf
-        std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
+        std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
         // Buffer for the tf
         std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
         // Timer to listen to the tf
-        rclcpp::TimerBase::SharedPtr timer_{nullptr};
+        rclcpp::TimerBase::SharedPtr timer_;
 
         //Node variables
         string camera_frame_; // Frame of the map tag

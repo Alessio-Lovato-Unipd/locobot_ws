@@ -19,6 +19,9 @@
 #include <thread>
 #include <vector>
 #include <utility>
+#include <optional>
+#include <variant>
+#include <chrono>
 
 // ROS 2
 #include <rclcpp/rclcpp.hpp>
@@ -30,10 +33,10 @@
 #include <moveit/move_group_interface/move_group_interface.h>
 
 
-using std::string;
 using moveit::planning_interface::MoveGroupInterface;
 using NavigateToPose = nav2_msgs::action::NavigateToPose;
 using GoalHandle = rclcpp_action::ClientGoalHandle<NavigateToPose>;
+
 
 /**
  * @brief Enum class to represent the different arm poses defined in the MoveIt configuration.
@@ -54,6 +57,8 @@ enum class GripperState {
     GRASPING,
     UNKNOWN
 };
+
+using PoseOrState = std::variant<ArmPose, GripperState>;
 
 /**
  * @brief Class to store the status of the arm.
@@ -200,7 +205,7 @@ public:
      * 
      * @return A new LocobotControl object.
      */
-    explicit LocobotControl(const string name = "locobot_controller", const string ns = "", 
+    explicit LocobotControl(const std::string name = "locobot_controller", const std::string ns = "", 
                             const rclcpp::NodeOptions & options = rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true),
                             const ArmPose arm_pose = ArmPose::UNKNOWN);
     /**
@@ -220,9 +225,10 @@ public:
      * @brief Send a goal to the navigation stack to move the robot to a specified pose.
      * 
      * @param pose The absolute pose relative to frame id where to move the robot to.
-     * @param timeout The time to wait for the action server to be available. Default is 2 seconds.
+     * @param timeout The time to wait for the action server to be available. Default 
+     * is set as the timeout defined in the parameters.
      */
-    void MoveBaseTo(const geometry_msgs::msg::PoseStamped &pose, const uint timeout = 2);
+    void MoveBaseTo(const geometry_msgs::msg::PoseStamped &pose, std::optional<double> timeout = std::nullopt);
 
     /**
      * @brief Return the distance remaining to the goal.
@@ -238,12 +244,12 @@ public:
      * the execution will be interrupted due to a bad ROS2 context.
      * 
      * @param pose The predefined pose to move the robot arm to.
-     * 
-     * @param interface_name The name of the MoveGroupInterface to use. Default is 'interbotix_arm'.
+     * @param interface_name The name of the MoveGroupInterface to use. Default is set as the arm interface name
+     * defined in the parameters.
      * 
      * @return True if the arm movement can be sent to the planning pipeline, false otherwise.
      */
-    bool SetArmPose(const ArmPose pose, const string interface_name = "interbotix_arm");
+    bool SetArmPose(const ArmPose pose, std::optional<std::string> interface_name = std::nullopt);
 
     /**
      * @brief Move the gripper to a specified pose. Updates the arm status to moving.
@@ -254,26 +260,38 @@ public:
      * the execution will be interrupted due to a bad ROS2 context.
      * 
      * @param pose The predefined pose to move the gripper to.
-     * 
-     * @param interface_name The name of the MoveGroupInterface to use. Default is 'interbotix_gripper'.
+     * @param interface_name The name of the MoveGroupInterface to use. Default is set as the gripper interface name 
+     * defined in the parameters.
      * 
      * @return True if the gripper movement can be send to the planning pipeline, false otherwise.
      */
-    bool SetGripper(const GripperState state, const string interface_name = "interbotix_gripper");
+    bool SetGripper(const GripperState state, std::optional<std::string> interface_name = std::nullopt);
 
     /**
      * @brief Stop the arm movement if it is in progress.
      * 
-     * @param arm_interface_name The name of the MoveGroupInterface for the arm. Default is 'interbotix_arm'.
-     * @param gripper_interface_name The name of the MoveGroupInterface for the gripper. Default is 'interbotix_gripper'.
+     * @param arm_interface_name The name of the MoveGroupInterface for the arm. 
+     * Default is set as the arm interface name defined in the parameters.
+     * @param gripper_interface_name The name of the MoveGroupInterface for the gripper. 
+     * Default is set as the gripper interface name defined in the parameters.
      */
-    void StopArm(const string arm_interface_name = "interbotix_arm", 
-                    const string gripper_interface_name = "interbotix_gripper");
+    void StopArm(std::optional<std::string> arm_interface_name = std::nullopt,
+                 std::optional<std::string> gripper_interface_name = std::nullopt);
 
     /**
      * @brief Reset the arm status to not moving and not in error.
      */
     void ResetArmStatus() {arm_status_.errorState(false); arm_status_.errorState(false);};
+
+    /**
+     * @brief Cancel all the goals sent to the navigation server.
+     * 
+     * @note The function waits for the action server to cancel all the goals 
+     * before returning (synchronous function).
+     * 
+     * @return True if the goals are cancelled, false otherwise.
+     */
+    bool cancelNavigationGoal();
 
 
     // Return true if the arm is moving or planning, false otherwise
@@ -292,9 +310,13 @@ public:
     float NavigationDistance() const {return navigation_status_.getDistance();};
     // Return the current arm pose
     ArmPose ArmCurrentPose() const {return arm_status_.get_arm_pose();};
+    // Return the current gripper state
     GripperState GripperCurrentState() const {return arm_status_.get_gripper_state();};
+    // Return the string of the MoveIt arm interface name
+    std::string ArmInterfaceName() const {return arm_interface_name_;};
+    // Return the string of the MoveIt gripper interface name
+    std::string GripperInterfaceName() const {return gripper_interface_name_;};
 
-    bool cancelNavigationGoal();
 
 private:
     // Action client for the navigation stack
@@ -309,6 +331,10 @@ private:
     // Variables
     ArmStatus arm_status_;          // Status of the arm
     NavigationStatus navigation_status_; // Status of the navigation
+    std::string navigation_server_name_; // Name of the navigation action server
+    std::string arm_interface_name_; // Name of the MoveGroupInterface for the arm
+    std::string gripper_interface_name_; // Name of the MoveGroupInterface for the gripper
+    double timeout_; // Timeout for the navigation action server waiting time in seconds
 
     // Functions
     /**
@@ -317,7 +343,7 @@ private:
      * The method returns the string representation of the ArmPose enum, based on the 
      * defined poses in the MoveIt configuration.
      */
-    string ArmPose_to_string(const ArmPose pose);
+    std::string ArmPose_to_string(const ArmPose pose);
 
     /**
      * @brief Return the string representation of the GripperState enum.
@@ -325,19 +351,19 @@ private:
      * The method returns the string representation of the GripperState enum, based on the 
      * defined gripper states in the MoveIt configuration.
      */
-    string GripperState_to_string(const GripperState state);
+    std::string GripperState_to_string(const GripperState state);
 
     /**
-     * @brief Execute the MoveIt plan.
+     * @brief Plan and execute the MoveIt plan.
      * 
-     * The method executes the MoveIt plan using the MoveGroupInterface.
+     * The method plan and executes the movement using the MoveGroupInterface.
      * 
      * @param move_group_interface The MoveGroupInterface to execute the plan.
-     * @param next_pose The next pose to move the arm to.
-     * @param next_gripper_state The next gripper state to move the gripper to.
+     * @param target The target pose or state to move the arm to.
+     * 
+     * @return True if the plan is executed successfully, false otherwise.
      */
-    void ExecutePlan(const string interface_name, const ArmPose next_pose, 
-                                    const GripperState next_gripper_state);
+    bool ExecutePlan(const std::string interface_name, const PoseOrState target);
 
 };
 

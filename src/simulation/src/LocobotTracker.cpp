@@ -24,6 +24,8 @@ LocobotTracker::LocobotTracker(const string node_name, const string ns)
     this->declare_parameter("debug", false, param_desc);
     param_desc.description = "Look for the map_tag->camera tf";
     this->declare_parameter("look_for_map_tag", false, param_desc);
+    param_desc.description = "The frequency to publish the TFs";
+    this->declare_parameter("publish_frequency", 1.0, param_desc);
 
     // Save parameters
     camera_frame_ = this->get_parameter("camera_frame").as_string();
@@ -41,7 +43,8 @@ LocobotTracker::LocobotTracker(const string node_name, const string ns)
 
     // Create a timer to look for new the apriltag tf
     timer_ = this->create_wall_timer(
-      0.005s, [this]() {return this->TfCallback();});
+      std::chrono::duration<double>(1.0 / this->get_parameter("publish_frequency").as_double()),
+      std::bind(&LocobotTracker::TfCallback, this));
 }
 
 
