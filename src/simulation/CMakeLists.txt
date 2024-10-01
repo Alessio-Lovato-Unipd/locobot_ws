@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.8)
 project(simulation)
 
+set (CMAKE_CXX_STANDARD 17)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
@@ -14,8 +16,6 @@ find_package(gazebo_ros REQUIRED)
 find_package(apriltag_ros REQUIRED)
 find_package(image_proc REQUIRED)
 #find_package(spatio_temporal_voxel_layer REQUIRED)
-find_package(behaviortree_cpp REQUIRED)
-find_package(behaviortree_ros2 REQUIRED)
 
 # source file dependencies
 find_package(nav2_msgs REQUIRED)
@@ -121,20 +121,17 @@ ament_target_dependencies(arm_sleep_position rclcpp
                                moveit_msgs)
 target_include_directories(arm_sleep_position PUBLIC include)
 
-# BT demo
-add_executable(bt_demo src/BT/demo_navigation.cpp src/LocobotControl.cpp)
-ament_target_dependencies(bt_demo 
-                              behaviortree_cpp
-                              behaviortree_ros2
-                              rclcpp
-                               geometry_msgs 
-                               nav2_msgs 
-                               rclcpp_action 
-                               rclcpp_components
-                               moveit_core
-                               moveit_ros_planning_interface
-                               moveit_msgs)
-target_include_directories(bt_demo PUBLIC include)
+# Human Emulator
+add_executable(human_emulator src/state_machine/HumanEmulator.cpp)
+ament_target_dependencies(human_emulator rclcpp
+                               geometry_msgs
+                               tf2_ros)
+
+#TF publisher
+add_executable(tf_publisher src/TFPublisher.cpp)
+ament_target_dependencies(tf_publisher rclcpp
+                                      geometry_msgs
+                                      tf2_ros)
 
 # install targets
 install(TARGETS
@@ -142,8 +139,8 @@ install(TARGETS
   demo_no_lidar
   tf_remapper
   arm_sleep_position
-  bt_demo
-  #state_machine
+  human_emulator
+  tf_publisher
   DESTINATION lib/${PROJECT_NAME})
 
 # install directories
@@ -155,6 +152,7 @@ install(DIRECTORY
     models
     urdf
     media
+    behavior_tree
   DESTINATION share/${PROJECT_NAME}
 )
 

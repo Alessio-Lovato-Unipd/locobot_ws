@@ -20,8 +20,6 @@
   <depend>geometry_msgs</depend>
   <depend>gazebo_ros</depend>
   <exec_depend>spatio_temporal_voxel_layer</exec_depend>
-  <depend>behaviortree_ros2</depend>
-  <depend>behaviortree_cpp</depend>
 
 
   <!-- Rclcpp dependencies -->

@@ -371,20 +371,6 @@ def generate_launch_description():
             ),
         ])
 
-    depth_to_scan = Node(
-        package='depthimage_to_laserscan',
-        executable='depthimage_to_laserscan_node',
-        name='depth_to_scan',
-        parameters=[{'use_sim_time': True},
-                    {'scan_height': 10},
-                    {'output_frame': 'camera_locobot_link'},
-                    {'range_min': 0.45},
-                    {'range_max': 15.0},
-                    {'scan_time': 0.033}],
-        remappings=[('depth', '/locobot/camera_frame_sensor/depth/image_raw'),
-                    ('depth_camera_info', '/locobot/camera_frame_sensor/depth/camera_info'),]
-        )
-
 
 
 ############################################################################################################
@@ -393,7 +379,8 @@ def generate_launch_description():
 
     # Include the markers and the relative nodes in the simulation
     include_markers_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare("simulation"), 'launch', 'include_markers.launch.py'])),
+        PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare("simulation"),
+                                                         'launch', 'include_markers.launch.py'])),
         launch_arguments={
             'camera_number': camera_number,
         }.items()
@@ -435,17 +422,6 @@ def generate_launch_description():
                       nav2_launch]
     )
 
-    # Wait for the move_group node to start before launching the arm_to_sleep_position node
-    wait_moveit = RegisterEventHandler(
-        event_handler=OnProcessStart(
-            target_action=move_group_node,
-            on_start= TimerAction(
-                period=5.0, #Delay in seconds
-                actions=[arm_to_sleep_position]
-            )
-        )
-    )
-
 
     return LaunchDescription([
         SetEnvironmentVariable('GAZEBO_RESOURCE_PATH', value=resources_path),
@@ -461,8 +437,6 @@ def generate_launch_description():
         gazebo_simulation_launch,
         wait_spawn_camera_services,
         wait_gazebo,
-        wait_moveit,
-        depth_to_scan,
     # Rviz launch
         rviz,
     ])

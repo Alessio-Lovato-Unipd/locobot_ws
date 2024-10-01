@@ -14,6 +14,7 @@
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 
@@ -21,9 +22,11 @@
 // Services and actions
 #include "simulation_interfaces/srv/last_error.hpp"
 #include "simulation_interfaces/srv/clear_error.hpp"
+#include "simulation_interfaces/srv/control_gripper.hpp"
 #include "simulation_interfaces/action/state_machine.hpp"
 
 #include <string>
+#include <chrono>
 #include <thread>
 #include <cmath>
 
@@ -37,7 +40,6 @@
 enum class States : uint8_t {
     ERROR,                  // Error state
     IDLE,                   // Wait for a new goal (triggered by human distance more than 1m)
-    CLEAR,                  // Clear the error state
     SECURE_ARM,             // Secure the arm to avoid collision in navigation
     WAIT_ARM_SECURING,      // Wait for the arm to be secured
     SEND_NAV_GOAL,          // Send the navigation goal to the navigation stack
@@ -48,7 +50,6 @@ enum class States : uint8_t {
     WAIT_GRIPPER_OPENING,   // Wait for the gripper to open
     GRIPPER_OPENED,         // Wait for the human to take the object (wait 5 seconds)
     GRIPPER_CLOSING,        // Close the gripper
-    WAIT_GRIPPER_CLOSING,   // Wait for the gripper to close
     GRIPPER_CLOSED,         // Retract the arm
     WAIT_ARM_RETRACTING,    // Wait for the arm to retract
     COMPLETED,              // The task has been completed
@@ -92,7 +93,7 @@ public:
 
     // Functions
     void nextState(); // Operate the state machine (send it to the next state)
-    string getLastError() const {return errorMsg_;} // Get the last error message
+    std::string getLastError() const {return errorMsg_;} // Get the last error message
     bool clearError(); // Clear the error message
     States getMachineState() const {return state_;} // Get the current state of the machine
 
@@ -110,8 +111,12 @@ private:
                             std::shared_ptr<const StateMachineAction::Goal> goal)
     {
         RCLCPP_INFO(this->get_logger(), "Received execution for State Machine");
-        if (requestedAbort_) {
-            RCLCPP_ERROR(this->get_logger(), "Goal rejected: machine is aborted. Please clear the ABORTED state.");
+        if (requestedAbort_ || state_ == States::ERROR) {
+            if (state_ == States::ABORTED) {
+                RCLCPP_ERROR(this->get_logger(), "Goal rejected: machine is aborted. Please clear the ABORTED state.");
+            } else {
+                RCLCPP_ERROR(this->get_logger(), "Goal rejected: machine is in error. Please clear the ERROR state.");
+            }
             return rclcpp_action::GoalResponse::REJECT;
         } else {
             return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
@@ -172,6 +177,42 @@ private:
 
         response->successful = clear_error();
     }
+
+    // Gripper control service server
+
+    // Service to control the gripper
+    rclcpp::Service<simulation_interfaces::srv::ControlGripper>::SharedPtr control_gripper_service_; 
+
+    /**
+     * @brief Service to control the gripper.
+     * 
+     * In this case the service is used as an external trigger to allow the gripper to move. This is a safety measure.
+     * 
+     * @note On the other hand, the gripper could be controlled externally to open and close the gripper. An example 
+     * of this is commented in the code.
+     */
+    void control_gripper_callback(const std::shared_ptr<simulation_interfaces::srv::ControlGripper::Request> request,
+                           std::shared_ptr<simulation_interfaces::srv::ControlGripper::Response> response) {
+        // The commented code could be implemetned to control externally the opening and closing of the gripper
+        // Thus in this cas ewe just use this service a safety measure to avoid the gripper to close on the human hand
+        // or to open the gripper when the human is not ready to take the object
+        /*
+        if (request->request == GripperControl::CLOSE) {
+            SetGripper(GripperState::GRASPING);
+        } else if (request->request == GripperControl::OPEN) {
+            SetGripper(GripperState::RELEASED);
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Unknown gripper control request");
+            response->successful = false;
+        }
+        // Wait the gripper to finish the movement
+        while (isArmMoving()) {
+            std::th
+            is_thread::sleep_for(std::chrono::milliseconds(100));
+        }*/
+        allow_gripper_movement_ = true;
+        response->successful_request = true;
+    }
     
 
     // Variables
@@ -180,11 +221,19 @@ private:
     Result result_{Result::INITIALIZED}; // Result of the machine
     std::string errorMsg_{""}; // Error message
     bool requestedAbort_{false}; // Request to abort the machine
-    std::string robot_frame_{""}; // Frame of the robot tag
-    std::string map_frame_{""}; // Frame of the map tag
-    std::string human_frame_{""}; // Frame of the human tag
+    std::string robot_frame_; // Frame of the robot tag
+    std::string map_frame_; // Frame of the map tag
+    std::string human_frame_; // Frame of the human tag
+    std::string goal_update_topic_; // Topic to update the navigation goal
+    bool follow_human_; // Follow the human or not after the first position
+    double gripper_wait_time_; // Seconds to wait before the gripper can close again after the object has been taken
+    bool allow_gripper_movement_{false}; // Allow the gripper to move
+    bool gripper_timer_ended_{false}; // Timer has ended
+    geometry_msgs::msg::PoseStamped last_human_pose_; // Pose of the human
+
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};// Listener to the tf
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;// Buffer for the tf
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_updater_; // Publisher to update the navigation goal
     
 
     // Functions
@@ -211,7 +260,7 @@ private:
      * 
      * @return True if the TF of the human and robot are available, false otherwise.
      */
-    bool tf_available();
+    bool tf_available() const;
 
     /**
      * @brief Function to determine if the requested TF is available.
@@ -221,7 +270,7 @@ private:
      * 
      * @return True if the requested TF is available, false otherwise.
      */
-    bool lookup_tf(const string &to_frame, const string &from_frame);
+    bool lookup_tf(const std::string &to_frame, const std::string &from_frame) const;
 
     /**
      * @brief Function to calculate the planar Euclidean distance between the robot and the human.
@@ -238,7 +287,7 @@ private:
      * 
      * @return The pose of the human relative to the map frame.
      */
-    geometry_msgs::msg::PoseStamped GetHumanPose() const;
+    geometry_msgs::msg::PoseStamped GetHumanPose();
 
     /**
      * @brief Convert the state enum to a string.
@@ -248,6 +297,16 @@ private:
      * @return The string representation of the state.
      */
     std::string state_to_string(const States state) const;
+
+    /**
+     * @brief closes the gripper after the time has passed.
+     * 
+     * @note the time is set by parameter gripper_wait_time.
+     * 
+     * @return True if the gripper has closed, false otherwise.
+     */
+    bool close_gripper_after_time(); // Close the gripper after the time has passed
+
 };
 
 
