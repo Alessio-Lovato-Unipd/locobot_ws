@@ -5,7 +5,7 @@ def generate_launch_description():
     
     demo = Node(
         package='simulation',
-        executable='main',
+        executable='demo',
         output='screen',
        # namespace='locobot',
         # Remapping is mandatory due to the namespace
