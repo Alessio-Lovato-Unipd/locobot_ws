@@ -51,18 +51,6 @@ def launch_setup(context):
         launch_arguments={'camera_number': number}.items()
     )
 
-    # Launch apriltag tag entity in gazebo
-    spawn_apriltag = Node(
-        package='gazebo_ros',
-        executable='spawn_entity.py',
-        name='spawn_map_tag',
-        arguments=['-entity', 'map_tag', '-file',
-                        PathJoinSubstitution([FindPackageShare('simulation'), 'models', 'map_tag', 'model.sdf']),
-                        '-x', '0.0', '-y', '-0.5', '-z', '0.01', # z = 0.01 because the model 'visual' is 1cm tall
-                        '-R', '0.0', '-P', '0.0', '-Y', '0.0'],
-        output='screen'
-    )
-
     # Create apriltag node for camera 1
     apriltag_node_1 = Node(
         package='apriltag_ros',
@@ -103,25 +91,7 @@ def launch_setup(context):
         ],
         output='screen'
     )
-
-    # Static broadcaster for the marker used to localize the map frame
-    map_static_broadcaster = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='map_tag_static_tf_braodcaster',
-        arguments=[
-            '--x', '-0.5',
-            '--y', '0.0',
-            '--z', '0.0',
-            '--roll', '0.0',
-            '--pitch', '0.0',
-            '--yaw', '1.57076',
-            '--frame-id', 'map_tag',
-            '--child-frame-id', 'map'
-        ],
-        output='screen'
-    )
-    
+  
     # Node that republish the tf from the apriltag_node_1 to the /tf topic
     tf_remapper = Node(
         package='simulation',
@@ -131,7 +101,7 @@ def launch_setup(context):
         output='screen',
         parameters=[{'use_sim_time':True},
                     {'camera_frame':'env_camera_1_frame'},
-                    {'look_for_map_tag': True}],
+                    {'look_for_map_tag': False}],
         remappings=[('/tf', '/tf_marker'),
                     ('/locobot/env_camera_1/tf_locobot', '/tf')]
     )
@@ -152,21 +122,14 @@ def launch_setup(context):
 
     # Create event handlers to create a proper sequence of actions
 
-    delayed_spawn_apriltag = TimerAction(
+    delayed_spawn = TimerAction(
         period=2.0, #Delay in seconds
-        actions=[spawn_apriltag]
-    )
-
-    wait_apriltag = RegisterEventHandler(
-        event_handler=OnProcessExit(
-            target_action=spawn_apriltag,
-            on_exit=[apriltag_static_broadcaster, map_static_broadcaster,
+        actions=[apriltag_static_broadcaster,
                      tf_remapper, tf_remapper_2, apriltag_node_1, apriltag_node_2]
-        )
-    )    
+    )   
 
     # Return the actions
-    return [include_camera_launch, delayed_spawn_apriltag, wait_apriltag]
+    return [include_camera_launch, delayed_spawn]
 
 
 """

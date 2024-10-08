@@ -56,6 +56,16 @@ def launch_setup(context):
         output="screen"
     )
 
+    tf_camera_1 = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        arguments = ['--x', '1.0', '--y', '0.0', '--z', '3.0',
+                     '--yaw', '-1.57079632', '--pitch', '0.0','--roll', '-3.14159265', 
+                     '--frame-id', 'env_camera_1_frame',
+                     '--child-frame-id', 'map'],
+        output='screen'
+    )
+
     # Get the path to the model of the second camera
     camera_model_path = PathJoinSubstitution([FindPackageShare("simulation"), 
                                               'models', 'camera_2', 'model.sdf'])
@@ -88,7 +98,7 @@ def launch_setup(context):
         ]
     )  
 
-    return [spawn_camera_1, spawn_camera_2]
+    return [spawn_camera_1, tf_camera_1, spawn_camera_2]
 
 
 """
