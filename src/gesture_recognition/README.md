@@ -1,6 +1,7 @@
 # Gesture Recognition Package
 
-This package contains the gesture recognition node that recognizes gestures using the MediaPipe library and sends the corresponding commands to change state to the robot. The package includes a launch file to start the gesture recognition node and optionally launch the RealSense camera.
+This package contains the gesture recognition node that recognizes gestures using the MediaPipe library and sends the corresponding commands to change state to the robot. The package includes a launch file to start the gesture recognition node and optionally launch the RealSense camera.<br>
+Documentation of the Mediapipe library is available [here](https://ai.google.dev/edge/mediapipe/solutions/vision/gesture_recognizer).
 
 ## Package Overview
 

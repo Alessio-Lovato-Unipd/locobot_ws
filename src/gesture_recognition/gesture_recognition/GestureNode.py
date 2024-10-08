@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 @file GestureNode.py
 @package gesture_recognition
@@ -9,6 +10,8 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
+import signal
+import sys
 
 import mediapipe as mp
 from mediapipe.tasks import python
@@ -133,8 +136,17 @@ class GestureRecognizer(Node):
 def main(args=None):
     rclpy.init(args=args)
     image_subscriber = GestureRecognizer()
-    rclpy.spin(image_subscriber)
-    image_subscriber.destroy_node()
+
+    def signal_handler(sig, frame):
+        image_subscriber.destroy_node()
+        rclpy.shutdown()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+    if rclpy.ok():
+        rclpy.spin(image_subscriber)
+        image_subscriber.destroy_node()
     rclpy.shutdown()
 
 
