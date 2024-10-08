@@ -22,13 +22,14 @@
 // Services and actions
 #include "simulation_interfaces/srv/last_error.hpp"
 #include "simulation_interfaces/srv/clear_error.hpp"
-#include "simulation_interfaces/srv/control_gripper.hpp"
+#include "simulation_interfaces/srv/control_states.hpp"
 #include "simulation_interfaces/action/state_machine.hpp"
 
 #include <string>
 #include <chrono>
 #include <thread>
 #include <cmath>
+#include <mutex>
 
 
 
@@ -38,21 +39,16 @@
  * The state machine is used to control the different states of the behavior of the robot.
  */
 enum class States : uint8_t {
-    ERROR,                  // Error state
-    IDLE,                   // Wait for a new goal (triggered by human distance more than 1m)
+    IDLE,                   // Waits for a new command
     SECURE_ARM,             // Secure the arm to avoid collision in navigation
     WAIT_ARM_SECURING,      // Wait for the arm to be secured
     SEND_NAV_GOAL,          // Send the navigation goal to the navigation stack
     WAIT_NAVIGATION,        // Wait for the navigation to reach the goal
-    NAVIGATION_COMPLETED,   // Extend the arm to deliver the object
     WAIT_ARM_EXTENDING,     // Wait for the arm to be extended
     ARM_EXTENDED,           // Open the gripper to release the object upon command
-    WAIT_GRIPPER_OPENING,   // Wait for the gripper to open
-    GRIPPER_OPENED,         // Wait for the human to take the object (wait 5 seconds)
-    GRIPPER_CLOSING,        // Close the gripper
-    GRIPPER_CLOSED,         // Retract the arm
+    WAIT_GRIPPER,           // Wait for the gripper to open
     WAIT_ARM_RETRACTING,    // Wait for the arm to retract
-    COMPLETED,              // The task has been completed
+    ERROR,                  // Error state
     ABORTING,               // The task is being aborted
     ABORTED                 // The task has been aborted
 };
@@ -131,6 +127,7 @@ private:
     {
         RCLCPP_INFO(this->get_logger(), "Received request to cancel goal");
         (void)goal_handle;
+        std::lock_guard<std::mutex> lock(request_mutex_);
         requestedAbort_ = true;
         errorMsg_ = "Goal canceled by user";
         return rclcpp_action::CancelResponse::ACCEPT;
@@ -153,7 +150,7 @@ private:
     rclcpp::Service<simulation_interfaces::srv::LastError>::SharedPtr get_last_error_; 
 
     /**
-     * @brief Service to return the last error message and state of the state machine.
+     * @brief Service callback to return the last error message and state of the state machine.
      */
     void return_last_error(const std::shared_ptr<simulation_interfaces::srv::LastError::Request> request,
                            std::shared_ptr<simulation_interfaces::srv::LastError::Response> response) {
@@ -168,7 +165,7 @@ private:
     rclcpp::Service<simulation_interfaces::srv::ClearError>::SharedPtr clear_error_service_; 
 
     /**
-     * @brief Service to clear the error (or aborted) state and message error.
+     * @brief Service callback to clear the error (or aborted) state and message error.
      * 
      * @note The machine will enter the IDLE state if possible.
      */
@@ -180,40 +177,66 @@ private:
 
     // Gripper control service server
 
-    // Service to control the gripper
-    rclcpp::Service<simulation_interfaces::srv::ControlGripper>::SharedPtr control_gripper_service_; 
+    // Service to control the state machine state changes
+    rclcpp::Service<simulation_interfaces::srv::ControlStates>::SharedPtr control_state_service_; 
 
     /**
-     * @brief Service to control the gripper.
+     * @brief Service callback to control the state machine state's changes.
      * 
-     * In this case the service is used as an external trigger to allow the gripper to move. This is a safety measure.
-     * 
-     * @note On the other hand, the gripper could be controlled externally to open and close the gripper. An example 
-     * of this is commented in the code.
+     * @note The service allows to change the state of the machine to IDLE, NAVIGATION, INTERACTION, 
+     * or ABORT.
      */
-    void control_gripper_callback(const std::shared_ptr<simulation_interfaces::srv::ControlGripper::Request> request,
-                           std::shared_ptr<simulation_interfaces::srv::ControlGripper::Response> response) {
-        // The commented code could be implemetned to control externally the opening and closing of the gripper
-        // Thus in this cas ewe just use this service a safety measure to avoid the gripper to close on the human hand
-        // or to open the gripper when the human is not ready to take the object
-        /*
-        if (request->request == GripperControl::CLOSE) {
-            SetGripper(GripperState::GRASPING);
-        } else if (request->request == GripperControl::OPEN) {
-            SetGripper(GripperState::RELEASED);
-        } else {
-            RCLCPP_ERROR(this->get_logger(), "Unknown gripper control request");
-            response->successful = false;
-        }
-        // Wait the gripper to finish the movement
-        while (isArmMoving()) {
-            std::th
-            is_thread::sleep_for(std::chrono::milliseconds(100));
-        }*/
-        allow_gripper_movement_ = true;
-        response->successful_request = true;
-    }
+    void change_state_callback(const std::shared_ptr<simulation_interfaces::srv::ControlStates::Request> request,
+                           std::shared_ptr<simulation_interfaces::srv::ControlStates::Response> response) {
     
+        // N.B requestedInteraction_ and requestedNavigation_ must be mutually exclusive
+        
+        // Lock the mutex to protect the state machine from concurrent access at the request variables
+        std::lock_guard<std::mutex> lock(request_mutex_);
+       
+        switch (request->state) {
+            case simulation_interfaces::srv::ControlStates::Request::IDLE:
+                requestedInteraction_ = false;
+                requestedNavigation_ = false;
+                response->successful_request = true;
+                break;
+
+            case simulation_interfaces::srv::ControlStates::Request::NAVIGATION:
+                requestedNavigation_ = true;
+                requestedInteraction_ = false;
+                response->successful_request = true;
+                break;
+
+            case simulation_interfaces::srv::ControlStates::Request::INTERACTION:
+                requestedNavigation_ = false;
+                requestedInteraction_ = true;
+                response->successful_request = true;
+                break;
+
+            case simulation_interfaces::srv::ControlStates::Request::OPEN_GRIPPER:
+                requestedGripperMovement_ = GripperState::RELEASED;
+                response->successful_request = true;
+                break;
+
+            case simulation_interfaces::srv::ControlStates::Request::CLOSE_GRIPPER:
+                requestedGripperMovement_ = GripperState::GRASPING;
+                response->successful_request = true;
+                break;
+
+            case simulation_interfaces::srv::ControlStates::Request::ABORT:
+                requestedAbort_ = true;
+                requestedInteraction_ = false;
+                requestedNavigation_ = false;
+                response->successful_request = true;
+                break;
+        
+            default:
+                response->successful_request = false;
+                break;
+        }
+    }
+
+
 
     // Variables
 
@@ -221,14 +244,16 @@ private:
     Result result_{Result::INITIALIZED}; // Result of the machine
     std::string errorMsg_{""}; // Error message
     bool requestedAbort_{false}; // Request to abort the machine
+    bool requestedNavigation_{false}; // Request to navigate to the human
+    bool requestedInteraction_{false}; // Request to interact with the human
+    GripperState requestedGripperMovement_{GripperState::UNKNOWN}; // Requested gripper movement
+    std::mutex request_mutex_; // Mutex to protect the state machine
     std::string robot_frame_; // Frame of the robot tag
     std::string map_frame_; // Frame of the map tag
     std::string human_frame_; // Frame of the human tag
     std::string goal_update_topic_; // Topic to update the navigation goal
     bool follow_human_; // Follow the human or not after the first position
-    double gripper_wait_time_; // Seconds to wait before the gripper can close again after the object has been taken
-    bool allow_gripper_movement_{false}; // Allow the gripper to move
-    bool gripper_timer_ended_{false}; // Timer has ended
+    int sleep_time_; // Sleep time in milliseconds for the state machine cycle
     geometry_msgs::msg::PoseStamped last_human_pose_; // Pose of the human
 
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};// Listener to the tf

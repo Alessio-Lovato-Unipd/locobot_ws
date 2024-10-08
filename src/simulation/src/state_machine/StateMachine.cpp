@@ -19,27 +19,39 @@ void StateMachine::nextState() {
         machineError("TF not available");
     } else if (robot_frame_ == "" || map_frame_ == "" || human_frame_ == "") { // Check if the robot frame and map tag frame are available
         machineError("Robot frame or map tag frame not passed as parameters");
-    } else if (requestedAbort_ && state_!= States::ABORTED) { // Check if an abort has been requested
-        state_ = States::ABORTING;
     }
+    // Mutex to protect the state machine
+    std::unique_lock<std::mutex> lock(request_mutex_);
 
-    // Switch statement to determine the next state
+    if (requestedAbort_ && state_!= States::ABORTED) // Check if an abort has been requested
+        state_ = States::ABORTING;
+    
+    lock.unlock();
+
     switch (state_) {
-        case States::IDLE:  // Initial state, wait for the human to be further than 1m from the robot
-            static float distance = distance_to_human();
-            if (distance == -1.0) {
-                machineError("Error in calculating the distance to the human");
-            } else if (distance > 1.0) {
+        case States::IDLE: // Initial state, wait for a new command
+            lock.lock();
+            if (requestedAbort_) {
+                lock.unlock();
+                state_ = States::ABORTING;
+            } else if (requestedNavigation_) {
+                lock.unlock();
                 state_ = States::SECURE_ARM;
-                result_ =  Result::RUNNING;
+            } else if (requestedInteraction_) {
+                lock.unlock();
+                SetArmPose(ArmPose::HOME);
+                state_ = States::WAIT_ARM_EXTENDING;
             }
             break;
 
 
         case States::SECURE_ARM:  // Send the arm to the secure position
-            if (ArmCurrentPose() != ArmPose::SLEEP)
+            if (ArmCurrentPose() != ArmPose::SLEEP) {
                 SetArmPose(ArmPose::SLEEP);
-            state_ = States::WAIT_ARM_SECURING;
+                state_ = States::WAIT_ARM_SECURING;
+            } else {
+                state_ = States::SEND_NAV_GOAL;
+            }
             break;
 
 
@@ -51,29 +63,43 @@ void StateMachine::nextState() {
             }
             break;
 
+
         case States::SEND_NAV_GOAL:  // Send the navigation goal to the navigation stack
             last_human_pose_ = GetHumanPose();
             MoveBaseTo(last_human_pose_);
             state_ = States::WAIT_NAVIGATION;
             break;
+        
 
         case States::WAIT_NAVIGATION:  // Wait for the navigation to reach the goal
             // Check if the human has moved
-            if (follow_human_) {
+            if (follow_human_)
                 nav_goal_updater_->publish(GetHumanPose());
+
+            // Check if the navigation has completed
+            lock.lock();
+            if (!requestedNavigation_) { // Human has stopped navigation    
+                lock.unlock();
+                if(isNavigating()) {
+                    cancelNavigationGoal();
+                }
+                lock.lock();
+                if (requestedInteraction_) { // Human has requested interaction
+                    lock.unlock();
+                    SetArmPose(ArmPose::HOME);
+                    state_ = States::WAIT_ARM_EXTENDING;
+                } else {
+                    lock.unlock();
+                    state_ = States::IDLE;
+                }
+            } else if (!isNavigating()) { // Goal has been reached but human is still moving
+                state_ = States::SEND_NAV_GOAL;  
             }
-            if (!isNavigating()) {
-                RCLCPP_INFO(this->get_logger(), "Navigation completed");
-                state_ = States::NAVIGATION_COMPLETED;
-                if (isNavigationInError())
-                    machineError("Navigation failed");
+            if (isNavigationInError()) { // Navigation has failed
+                machineError("Navigation failed");
             }
             break;
 
-        case States::NAVIGATION_COMPLETED:  // Extend the arm to deliver the object
-                SetArmPose(ArmPose::HOME);
-                state_ = States::WAIT_ARM_EXTENDING;
-            break;
 
         case States::WAIT_ARM_EXTENDING:  // Wait for the arm to be extended
             if (!isArmMoving()) {
@@ -83,66 +109,39 @@ void StateMachine::nextState() {
             }
             break;
 
+
         case States::ARM_EXTENDED:  // Open the gripper to release the object upon command
             // Open the gripper if allowed
-            if (allow_gripper_movement_) {
-                allow_gripper_movement_ = false;
-                SetGripper(GripperState::RELEASED);
-                state_ = States::WAIT_GRIPPER_OPENING;
+            lock.lock();
+            if (requestedGripperMovement_ != GripperCurrentState() 
+                        && requestedGripperMovement_ != GripperState::UNKNOWN) {
+                lock.unlock();
+                SetGripper(requestedGripperMovement_);
+                requestedGripperMovement_ = GripperState::UNKNOWN;
+                state_ = States::WAIT_GRIPPER;
+            } else if (!requestedInteraction_) {
+                lock.unlock();
+                SetArmPose(ArmPose::SLEEP);
+                state_ = States::WAIT_ARM_RETRACTING;
             }
             break;
 
-        case States::WAIT_GRIPPER_OPENING:  // Wait for the gripper to open
+
+        case States::WAIT_GRIPPER:  // Wait for the gripper to open
             if (!isArmMoving()) {
-                state_ = States::GRIPPER_OPENED;
-                // Start the timer to wait before the gripper can close again
-                gripper_timer_ended_ = false;
-                std::thread{[this](){
-                    std::this_thread::sleep_for(std::chrono::seconds(static_cast<int>(gripper_wait_time_)));
-                    gripper_timer_ended_ = true;
-                }}.detach();
-
-                if (isArmInError()) {
-                    gripper_timer_ended_ = false;
-                    machineError("Gripper opening failed");
-                }
-            }
-            break;
-        
-        case States::GRIPPER_OPENED:  // Wait for the human to take the object
-            // Wait for the timer to end
-            if (gripper_timer_ended_) {
-                state_ = States::GRIPPER_CLOSING;
-                gripper_timer_ended_ = false;
-                SetGripper(GripperState::GRASPING);
-            }
-            break;
-
-        case States::GRIPPER_CLOSING:  // Close the gripper
-            if(!isArmMoving()) {
-                state_ = States::GRIPPER_CLOSED;
+                state_ = States::ARM_EXTENDED;
                 if (isArmInError())
-                    machineError("Gripper closing failed");
+                    machineError("Gripper movement failed");
             }
             break;
 
-        case States::GRIPPER_CLOSED:  // Retract the arm
-            SetArmPose(ArmPose::SLEEP);
-            state_ = States::WAIT_ARM_RETRACTING;
-            break;
 
         case States::WAIT_ARM_RETRACTING:  // Wait for the arm to retract
             if (!isArmMoving()) {
-                state_ = States::COMPLETED;
+                state_ = States::IDLE;
                 if (isArmInError())
                     machineError("Arm retracting failed");
             }
-            break;
-        
-
-        case States::COMPLETED:  // The task has been completed
-            //state_ = States::IDLE;
-            result_ =  Result::SUCCESS;
             break;
 
 
@@ -171,6 +170,7 @@ void StateMachine::nextState() {
         case States::ABORTED:  // The machine is aborted
             result_ = Result::ABORTED;
             break;
+
     }
 }
 
@@ -188,18 +188,18 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
     this->declare_parameter("human_tag_frame", "human_tag", param_desc);
     param_desc.description = "Indicates if the human should be followed after the first position";
     this->declare_parameter("follow_human", true, param_desc);
-    param_desc.description = "Seconds to wait before the gripper can close again after the object has been taken";
-    this->declare_parameter("gripper_wait_time", 5.0, param_desc);
     param_desc.description = "Topic to update the navigation goal";
     this->declare_parameter("goal_update_topic", "goal_update", param_desc);
+    param_desc.description = "Time [ms] to sleep between cycles of the state machine";
+    this->declare_parameter("sleep_time", 100, param_desc);
 
     // Save parameters
     robot_frame_ = this->get_parameter("robot_tag_frame").as_string();
     map_frame_ = this->get_parameter("map_frame").as_string();
     human_frame_ = this->get_parameter("human_tag_frame").as_string();
     follow_human_ = this->get_parameter("follow_human").as_bool();
-    gripper_wait_time_ = this->get_parameter("gripper_wait_time").as_double();
     goal_update_topic_ = this->get_parameter("goal_update_topic").as_string();
+    sleep_time_ = this->get_parameter("sleep_time").as_int();
 
     // Initialize the tf buffer and listener
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -224,8 +224,8 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
         "clear_error_state", std::bind(&StateMachine::clear_error_callback, this, _1, _2));
 
     // Create the control gripper service
-    control_gripper_service_ = this->create_service<simulation_interfaces::srv::ControlGripper>(
-        "control_gripper", std::bind(&StateMachine::control_gripper_callback, this, _1, _2));
+    control_state_service_ = this->create_service<simulation_interfaces::srv::ControlStates>(
+        "state_control", std::bind(&StateMachine::change_state_callback, this, _1, _2));
 
     // Create the update goal publisher
     nav_goal_updater_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(goal_update_topic_, 10);
@@ -257,6 +257,7 @@ void StateMachine::spinMachine(const std::shared_ptr<GoalHandleStateMachine> goa
         // Update the feedback message
         status = static_cast<uint8_t>(state_);
         goal_handle->publish_feedback(feedback);
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time_));
     }
 
     if (requestedAbort_) {
@@ -272,15 +273,18 @@ void StateMachine::spinMachine(const std::shared_ptr<GoalHandleStateMachine> goa
 bool StateMachine::clear_error() {
     // Clear the error message and set the machine in the IDLE state
     if (state_ == States::ERROR || state_ == States::ABORTED) {
-        state_ = States::IDLE;
-        result_ = Result::INITIALIZED;
         errorMsg_ = "";
+        requestedNavigation_ = false;
+        requestedInteraction_ = false;
+        requestedGripperMovement_ = GripperState::UNKNOWN;
         // If an aborted request has been made, Moveit throws an error but the machine is not in error
         if (requestedAbort_){
             requestedAbort_ = false;
             ResetArmStatus();
         }
         RCLCPP_INFO(this->get_logger(), "Error cleared. Machine in IDLE state");
+        state_ = States::IDLE;
+        result_ = Result::INITIALIZED;
         return true;
     }
     return false;
@@ -358,24 +362,14 @@ std::string StateMachine::state_to_string(const States state) const {
             return "SEND_NAV_GOAL";
         case States::WAIT_NAVIGATION:
             return "WAIT_NAVIGATION";
-        case States::NAVIGATION_COMPLETED:
-            return "NAVIGATION_COMPLETED";
         case States::WAIT_ARM_EXTENDING:
             return "WAIT_ARM_EXTENDING";
         case States::ARM_EXTENDED:
             return "ARM_EXTENDED";
-        case States::WAIT_GRIPPER_OPENING:
-            return "WAIT_GRIPPER_OPENING";
-        case States::GRIPPER_OPENED:
-            return "GRIPPER_OPENED";
-        case States::GRIPPER_CLOSING:
-            return "GRIPPER_CLOSING";
-        case States::GRIPPER_CLOSED:
-            return "GRIPPER_CLOSED";
+        case States::WAIT_GRIPPER:
+            return "WAIT_GRIPPER";
         case States::WAIT_ARM_RETRACTING:
             return "WAIT_ARM_RETRACTING";
-        case States::COMPLETED:
-            return "COMPLETED";
         case States::ERROR:
             return "ERROR";
         case States::ABORTING:
