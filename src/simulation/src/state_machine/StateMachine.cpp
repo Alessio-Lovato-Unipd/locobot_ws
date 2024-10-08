@@ -331,7 +331,7 @@ double StateMachine::distance_to_human() const {
 geometry_msgs::msg::PoseStamped StateMachine::GetHumanPose() {
     // Get the pose of the human relative to the map frame
     geometry_msgs::msg::TransformStamped human_tf;
-    human_tf = tf_buffer_->lookupTransform(human_frame_, map_frame_, tf2::TimePointZero);
+    human_tf = tf_buffer_->lookupTransform(map_frame_, human_frame_, tf2::TimePointZero);
     geometry_msgs::msg::PoseStamped pose;
     pose.header.stamp = get_clock()->now();
     pose.header.frame_id = map_frame_;
