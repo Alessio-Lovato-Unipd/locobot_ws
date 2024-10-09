@@ -7,176 +7,17 @@
 #include "state_machine/StateMachine.h"
 
 
-void StateMachine::machineError(const std::string &msg) {
-    state_ = States::ERROR;
-    errorMsg_ = msg;
-}
+/***********************************************************************************************/
+/***********************************************************************************************/
+/***********************************   LIFECYCLE CALLBACKS   ***********************************/
+/***********************************************************************************************/
+/***********************************************************************************************/
 
-void StateMachine::nextState() {
 
-    // Check if Tf of both human and robot are available
-    if (!tf_available()) {
-        machineError("TF not available");
-    } else if (robot_frame_ == "" || map_frame_ == "" || human_frame_ == "") { // Check if the robot frame and map tag frame are available
-        machineError("Robot frame or map tag frame not passed as parameters");
-    }
-    // Mutex to protect the state machine
-    std::unique_lock<std::mutex> lock(request_mutex_);
-
-    if (requestedAbort_ && state_!= States::ABORTED) // Check if an abort has been requested
-        state_ = States::ABORTING;
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn StateMachine::on_configure(
+        const rclcpp_lifecycle::State & state) {
     
-    lock.unlock();
-
-    switch (state_) {
-        case States::IDLE: // Initial state, wait for a new command
-            lock.lock();
-            if (requestedAbort_) {
-                lock.unlock();
-                state_ = States::ABORTING;
-            } else if (requestedNavigation_) {
-                lock.unlock();
-                state_ = States::SECURE_ARM;
-            } else if (requestedInteraction_) {
-                lock.unlock();
-                SetArmPose(ArmPose::HOME);
-                state_ = States::WAIT_ARM_EXTENDING;
-            }
-            break;
-
-
-        case States::SECURE_ARM:  // Send the arm to the secure position
-            if (ArmCurrentPose() != ArmPose::SLEEP) {
-                SetArmPose(ArmPose::SLEEP);
-                state_ = States::WAIT_ARM_SECURING;
-            } else {
-                state_ = States::SEND_NAV_GOAL;
-            }
-            break;
-
-
-        case States::WAIT_ARM_SECURING:  // Wait for the arm to be secured
-            if (!isArmMoving()) {
-                state_ = States::SEND_NAV_GOAL;
-                if (isArmInError())
-                    machineError("Arm securing failed");
-            }
-            break;
-
-
-        case States::SEND_NAV_GOAL:  // Send the navigation goal to the navigation stack
-            last_human_pose_ = GetHumanPose();
-            MoveBaseTo(last_human_pose_);
-            state_ = States::WAIT_NAVIGATION;
-            break;
-        
-
-        case States::WAIT_NAVIGATION:  // Wait for the navigation to reach the goal
-            // Check if the human has moved
-            if (follow_human_)
-                nav_goal_updater_->publish(GetHumanPose());
-
-            // Check if the navigation has completed
-            lock.lock();
-            if (!requestedNavigation_) { // Human has stopped navigation    
-                lock.unlock();
-                if(isNavigating()) {
-                    cancelNavigationGoal();
-                }
-                lock.lock();
-                if (requestedInteraction_) { // Human has requested interaction
-                    lock.unlock();
-                    SetArmPose(ArmPose::HOME);
-                    state_ = States::WAIT_ARM_EXTENDING;
-                } else {
-                    lock.unlock();
-                    state_ = States::IDLE;
-                }
-            } else if (!isNavigating()) { // Goal has been reached but human is still moving
-                state_ = States::SEND_NAV_GOAL;  
-            }
-            if (isNavigationInError()) { // Navigation has failed
-                machineError("Navigation failed");
-            }
-            break;
-
-
-        case States::WAIT_ARM_EXTENDING:  // Wait for the arm to be extended
-            if (!isArmMoving()) {
-                state_ = States::ARM_EXTENDED;
-                if (isArmInError())
-                    machineError("Arm extending failed");
-            }
-            break;
-
-
-        case States::ARM_EXTENDED:  // Open the gripper to release the object upon command
-            // Open the gripper if allowed
-            lock.lock();
-            if (requestedGripperMovement_ != GripperCurrentState() 
-                        && requestedGripperMovement_ != GripperState::UNKNOWN) {
-                lock.unlock();
-                SetGripper(requestedGripperMovement_);
-                requestedGripperMovement_ = GripperState::UNKNOWN;
-                state_ = States::WAIT_GRIPPER;
-            } else if (!requestedInteraction_) {
-                lock.unlock();
-                SetArmPose(ArmPose::SLEEP);
-                state_ = States::WAIT_ARM_RETRACTING;
-            }
-            break;
-
-
-        case States::WAIT_GRIPPER:  // Wait for the gripper to open
-            if (!isArmMoving()) {
-                state_ = States::ARM_EXTENDED;
-                if (isArmInError())
-                    machineError("Gripper movement failed");
-            }
-            break;
-
-
-        case States::WAIT_ARM_RETRACTING:  // Wait for the arm to retract
-            if (!isArmMoving()) {
-                state_ = States::IDLE;
-                if (isArmInError())
-                    machineError("Arm retracting failed");
-            }
-            break;
-
-
-        case States::ERROR:  // The machine is in error
-            StopArm(); // Stop the arm movement
-            cancelNavigationGoal(); // Cancel the navigation goal
-            result_ =  Result::FAILURE;
-            break;
-
-
-        case States::ABORTING:  // The machine is aborting
-            result_ = Result::ABORTING;
-            state_ = States::ABORTED;
-            StopArm(); // Stop the arm movement
-
-            // N.B. Arm will be in error state due to abortion of ExecutePlan
-            //      The error state is cleared in the clear_error() function
-
-            // Stop the navigation
-            if (!cancelNavigationGoal())
-                    machineError("Navigation cancel failed");
-    
-            break;
-
-
-        case States::ABORTED:  // The machine is aborted
-            result_ = Result::ABORTED;
-            break;
-
-    }
-}
-
-
-StateMachine::StateMachine (const rclcpp::NodeOptions & options) 
-    : LocobotControl("StateMachine", "", options)  {
+    RCLCPP_INFO(this->get_logger(), "Configuring State Machine");
 
     // Declare parameters
     auto param_desc = rcl_interfaces::msg::ParameterDescriptor{};
@@ -192,14 +33,45 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
     this->declare_parameter("goal_update_topic", "goal_update", param_desc);
     param_desc.description = "Time [ms] to sleep between cycles of the state machine";
     this->declare_parameter("sleep_time", 100, param_desc);
+    param_desc.description = "Name of the locobot controller node";
+    this->declare_parameter("controller_name", "locobot_controller", param_desc);
+    param_desc.description = "Name of the locobot controller namespace";
+    this->declare_parameter("controller_ns", "", param_desc);
+    param_desc.description = "Name of the navigation server";
+    this->declare_parameter("navigation_server", "navigate_to_pose", param_desc);
+    param_desc.description = "Name of the arm interface";
+    this->declare_parameter("arm_interface", "interbotix_arm", param_desc);
+    param_desc.description = "Name of the gripper interface";
+    this->declare_parameter("gripper_interface", "interbotix_gripper", param_desc);
+    param_desc.description = "Timeout for the navigation action server in seconds";
+    this->declare_parameter("timeout", 2.0, param_desc);
+    param_desc.description = "Name of the topic to publish the state info";
+    this->declare_parameter("info_topic", "state_info", param_desc);
 
     // Save parameters
     robot_frame_ = this->get_parameter("robot_tag_frame").as_string();
     map_frame_ = this->get_parameter("map_frame").as_string();
     human_frame_ = this->get_parameter("human_tag_frame").as_string();
     follow_human_ = this->get_parameter("follow_human").as_bool();
-    goal_update_topic_ = this->get_parameter("goal_update_topic").as_string();
     sleep_time_ = this->get_parameter("sleep_time").as_int();
+
+    // Check if the parameters are valid
+    if (robot_frame_ == "" || map_frame_ == "" || human_frame_ == "") {
+        RCLCPP_ERROR(this->get_logger(), "Robot frame, Human frame or map frame was set to an empty string");
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+    }
+    if (sleep_time_ <= 0) {
+        RCLCPP_ERROR(this->get_logger(), "Sleep time must be greater than 0");
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+    }
+    if (this->get_parameter("goal_update_topic").as_string() == "") {
+        RCLCPP_ERROR(this->get_logger(), "Goal update topic was set to an empty string");
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+    }
+    if (this->get_parameter("info_topic").as_string() == "") {
+        RCLCPP_ERROR(this->get_logger(), "Info topic was set to an empty string");
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+    }
 
     // Initialize the tf buffer and listener
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -208,17 +80,10 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
     // Create the action server
     using namespace std::placeholders;
 
-    this->action_server_ = rclcpp_action::create_server<StateMachineAction>(
-      this,
-      "state_machine_server",
-      std::bind(&StateMachine::handle_goal, this, _1, _2),
-      std::bind(&StateMachine::handle_cancel, this, _1),
-      std::bind(&StateMachine::handle_accepted, this, _1));
-
     // Create the last error service
     get_last_error_ = this->create_service<simulation_interfaces::srv::LastError>(
         "get_last_error", std::bind(&StateMachine::return_last_error, this, _1, _2));
-    
+        
     // Create the clear error service
     clear_error_service_ = this->create_service<simulation_interfaces::srv::ClearError>(
         "clear_error_state", std::bind(&StateMachine::clear_error_callback, this, _1, _2));
@@ -228,66 +93,329 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
         "state_control", std::bind(&StateMachine::change_state_callback, this, _1, _2));
 
     // Create the update goal publisher
-    nav_goal_updater_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(goal_update_topic_, 10);
+    nav_goal_updater_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(this->get_parameter("goal_update_topic").as_string(), 10);
 
+    // Create the info publisher
+    info_publisher_ = this->create_publisher<std_msgs::msg::String>(this->get_parameter("info_topic").as_string(), 10);
+
+    // Create the locobot controller
+    rclcpp::NodeOptions options;
+    options.parameter_overrides({
+        {"navigation_server", this->get_parameter("navigation_server").as_string()},
+        {"arm_interface", this->get_parameter("arm_interface").as_string()},
+        {"gripper_interface", this->get_parameter("gripper_interface").as_string()},
+        {"timeout", this->get_parameter("timeout").as_double()}
+    });
+    locobot_ = std::make_shared<LocobotControl>(this->get_parameter("controller_name").as_string(),
+                                                this->get_parameter("controller_ns").as_string(),
+                                                options);
+
+    // Check if the navigation server is available
+    bool server_available = locobot_->isNavigationServerAvailable();
+    if (!server_available) { // Try again in 1 second
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        server_available = locobot_->isNavigationServerAvailable();
+    }
+    if (!server_available) {
+        RCLCPP_ERROR(this->get_logger(), "Navigation server not available");
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+    }
+
+    // Create the threads for locobot and main loop
+    main_thread_ = std::thread(&StateMachine::mainLoop, this);
+    locobot_thread_ = std::thread(&StateMachine::locobotLoop, this, std::ref(locobot_));
+
+    RCLCPP_INFO(this->get_logger(), "State Machine configured");
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 
-void StateMachine::spinMachine(const std::shared_ptr<GoalHandleStateMachine> goal_handle) {
-    // Define feedback message and result
-    auto feedback = std::make_shared<simulation_interfaces::action::StateMachine::Feedback>();
-    uint8_t &status = feedback->current_state;
-    auto result = std::make_shared<simulation_interfaces::action::StateMachine::Result>();
-    status = static_cast<uint8_t>(state_);
-    goal_handle->publish_feedback(feedback);
-    States last_status = state_;
-    // Main loop
-    while (rclcpp::ok()) {
-        if (result_ != Result::RUNNING && result_ != Result::ABORTING && result_ != Result::INITIALIZED) {
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn StateMachine::on_activate(
+        const rclcpp_lifecycle::State & state) {
+    
+    RCLCPP_INFO(this->get_logger(), "Activating State Machine");
+
+    // Activate the publishers
+    nav_goal_updater_->on_activate();
+    info_publisher_->on_activate();
+
+    // Initialize the state machine
+    state_ = States::IDLE;
+    requestedAbort_ = false;
+    requestedNavigation_ = false;
+    requestedInteraction_ = false;
+    requestedGripperMovement_ = GripperState::UNKNOWN;
+    errorMsg_ = "";
+
+    // Launch locobot controller
+    pause_locobot_thread_ = false;
+
+    // Launch the main thread of the state machine
+    pause_main_thread_ = false;
+
+    RCLCPP_INFO(this->get_logger(), "State Machine activated");
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn StateMachine::on_deactivate(
+        const rclcpp_lifecycle::State & state) {
+    
+    RCLCPP_INFO(this->get_logger(), "Deactivating State Machine");
+
+    // Stop Arm and Navigation
+    locobot_->cancelNavigationGoal();
+    locobot_->StopArm();
+
+    // Pause the main thread
+    std::unique_lock<std::mutex> lock(main_thread_mutex_);
+    pause_main_thread_ = true;
+    lock.unlock();
+
+    // Pause the locobot thread
+    std::unique_lock<std::mutex> lock2(locobot_thread_mutex_);
+    pause_locobot_thread_ = true;
+    lock2.unlock();
+
+    // Deactivate the publishers
+    nav_goal_updater_->on_deactivate();
+    info_publisher_->on_deactivate();
+
+    RCLCPP_INFO(this->get_logger(), "State Machine deactivated");
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn StateMachine::on_error(
+        const rclcpp_lifecycle::State & state) {
+    
+    RCLCPP_ERROR(this->get_logger(), "Error in State Machine: %s", errorMsg_.c_str());
+
+    // Stop the threads and join them
+    state_ = States::ERROR;
+    locobot_thread_.join();
+    main_thread_.join();
+        
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn StateMachine::on_shutdown(
+        const rclcpp_lifecycle::State & state) {
+
+    RCLCPP_INFO(this->get_logger(), "Shutting down State Machine");
+
+    if (locobot_->isArmMoving()) {
+        locobot_->StopArm();
+    }
+    if (locobot_->isNavigating()) {
+        locobot_->cancelNavigationGoal();
+    }
+    while (locobot_->isArmMoving() || locobot_->isNavigating()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    state_ = States::COMPLETED;
+
+    // Stop the threads and join them
+    locobot_thread_.join();
+
+    // Stop the main thread
+    main_thread_.join();
+
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+
+/***********************************************************************************************/
+/***********************************************************************************************/
+/*********************************   STATE MACHINE FUNCTIONS   *********************************/
+/***********************************************************************************************/
+/***********************************************************************************************/
+
+
+void StateMachine::machineError(const std::string &msg) {
+    errorMsg_ = msg;
+    locobot_->StopArm();
+    locobot_->cancelNavigationGoal();
+    while (locobot_->isArmMoving() || locobot_->isNavigating()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    state_ = States::ERROR;
+    this->deactivate();
+}
+
+
+void StateMachine::nextState() {
+
+    // Check if Tf of both human and robot are available
+    if (!tf_available()) {
+        machineError("TF not available");
+    }
+
+    switch (state_) {
+        case States::IDLE: { // Initial state, wait for a new command
+            std::unique_lock<std::mutex> lock(request_mutex_);
+            if (requestedNavigation_) {
+                lock.unlock();
+                state_ = States::SECURE_ARM;
+            } else if (requestedInteraction_) {
+                lock.unlock();
+                locobot_->SetArmPose(ArmPose::HOME);
+                state_ = States::WAIT_ARM_EXTENDING;
+            }
             break;
         }
+
+        case States::SECURE_ARM: { // Send the arm to the secure position
+            if (locobot_->ArmCurrentPose() != ArmPose::SLEEP) {
+                locobot_->SetArmPose(ArmPose::SLEEP);
+                state_ = States::WAIT_ARM_SECURING;
+            } else {
+                state_ = States::SEND_NAV_GOAL;
+            }
+            break;
+        }
+
+        case States::WAIT_ARM_SECURING: { // Wait for the arm to be secured
+            if (!locobot_->isArmMoving()) {
+                state_ = States::SEND_NAV_GOAL;
+                if (locobot_->isArmInError())
+                    machineError("Arm securing failed");
+            }
+            break;
+        }
+
+        case States::SEND_NAV_GOAL: { // Send the navigation goal to the navigation stack
+            last_human_pose_ = GetHumanPose();
+            locobot_->MoveBaseTo(last_human_pose_);
+            state_ = States::WAIT_NAVIGATION;
+            break;
+        }
+
+        case States::WAIT_NAVIGATION: { // Wait for the navigation to reach the goal
+            // Check if the human has moved
+            if (follow_human_)
+                nav_goal_updater_->publish(GetHumanPose());
+
+            // Check if the navigation has completed
+            std::unique_lock<std::mutex> lock(request_mutex_);
+            if (!requestedNavigation_) { // Human has stopped navigation    
+                lock.unlock();
+                if(locobot_->isNavigating()) {
+                    locobot_->cancelNavigationGoal();
+                }
+                lock.lock();
+                if (requestedInteraction_) { // Human has requested interaction
+                    lock.unlock();
+                    locobot_->SetArmPose(ArmPose::HOME);
+                    state_ = States::WAIT_ARM_EXTENDING;
+                } else {
+                    lock.unlock();
+                    state_ = States::IDLE;
+                }
+            } else if (!locobot_->isNavigating()) { // Goal has been reached but human is still moving
+                state_ = States::SEND_NAV_GOAL;  
+            }
+            if (locobot_->isNavigationInError()) { // Navigation has failed
+                machineError("Navigation failed");
+            }
+            break;
+        }
+
+        case States::WAIT_ARM_EXTENDING: { // Wait for the arm to be extended
+            if (!locobot_->isArmMoving()) {
+                state_ = States::ARM_EXTENDED;
+                if (locobot_->isArmInError())
+                    machineError("Arm extending failed");
+            }
+            break;
+        }
+
+        case States::ARM_EXTENDED: { // Open the gripper to release the object upon command
+            std::unique_lock<std::mutex> lock(request_mutex_);
+            if (requestedGripperMovement_ != locobot_->GripperCurrentState() 
+                        && requestedGripperMovement_ != GripperState::UNKNOWN) {
+                lock.unlock();
+                locobot_->SetGripper(requestedGripperMovement_);
+                requestedGripperMovement_ = GripperState::UNKNOWN;
+                state_ = States::WAIT_GRIPPER;
+            } else if (!requestedInteraction_) {
+                lock.unlock();
+                locobot_->SetArmPose(ArmPose::SLEEP);
+                state_ = States::WAIT_ARM_RETRACTING;
+            }
+            break;
+        }
+
+        case States::WAIT_GRIPPER: { // Wait for the gripper to open
+            if (!locobot_->isArmMoving()) {
+                state_ = States::ARM_EXTENDED;
+                if (locobot_->isArmInError())
+                    machineError("Gripper movement failed");
+            }
+            break;
+        }
+
+        case States::WAIT_ARM_RETRACTING: { // Wait for the arm to retract
+            if (!locobot_->isArmMoving()) {
+                state_ = States::IDLE;
+                if (locobot_->isArmInError())
+                    machineError("Arm retracting failed");
+            }
+            break;
+        }
+
+        case States::ERROR: { // The machine is in error
+            locobot_->StopArm();
+            locobot_->cancelNavigationGoal();
+            state_ = States::COMPLETED;
+            break;
+        }
+
+        case States::COMPLETED: { // The machine has completed the task
+            break;
+        }
+    }
+}
+
+void StateMachine::mainLoop() {
+    rclcpp::Rate rate(1000/sleep_time_); // 1000 Hz / sleep_time_ ms
+    States last_status = state_;
+    while (rclcpp::ok() && state_ != States::ERROR && state_ != States::COMPLETED) {
+        std::unique_lock<std::mutex> lock(main_thread_mutex_);
+        if (pause_main_thread_) { // Wait for the main thread to be activated
+            lock.unlock();
+        } else { // Advance the state machine
+            lock.unlock();
+            nextState();
+        }
+        // Print the changes in the state
         if (last_status != state_) {
             last_status = state_;
             RCLCPP_INFO(this->get_logger(), "Status: %s", state_to_string(state_).c_str());
         }
-        // Check if the goal has been canceled
-
-        nextState();
-
-        // Update the feedback message
-        status = static_cast<uint8_t>(state_);
-        goal_handle->publish_feedback(feedback);
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time_));
-    }
-
-    if (requestedAbort_) {
-        goal_handle->canceled(result);
-    } else if (result_ == Result::SUCCESS) {
-        goal_handle->succeed(result);
-    } else {
-        goal_handle->abort(result);
-    }
-
-}  
-
-bool StateMachine::clear_error() {
-    // Clear the error message and set the machine in the IDLE state
-    if (state_ == States::ERROR || state_ == States::ABORTED) {
-        errorMsg_ = "";
-        requestedNavigation_ = false;
-        requestedInteraction_ = false;
-        requestedGripperMovement_ = GripperState::UNKNOWN;
-        // If an aborted request has been made, Moveit throws an error but the machine is not in error
-        if (requestedAbort_){
-            requestedAbort_ = false;
-            ResetArmStatus();
+        // Publish the state info
+        if (info_publisher_->is_activated()) {
+            std_msgs::msg::String msg;
+            msg.data = state_to_string(state_);
+            info_publisher_->publish(msg);
         }
-        RCLCPP_INFO(this->get_logger(), "Error cleared. Machine in IDLE state");
-        state_ = States::IDLE;
-        result_ = Result::INITIALIZED;
-        return true;
+        rate.sleep();
     }
-    return false;
+}
+
+void StateMachine::locobotLoop(std::shared_ptr<LocobotControl> locobot) {
+    while (rclcpp::ok() && state_ != States::ERROR && state_ != States::COMPLETED) {
+        std::unique_lock<std::mutex> lock(locobot_thread_mutex_);
+        if (pause_locobot_thread_) { // Pause the locobot thread
+            lock.unlock();
+            // Wait for the locobot thread to be activated
+        } else {
+            lock.unlock();
+            rclcpp::spin_some(locobot);
+        }
+    }
 }
 
 
@@ -305,10 +433,12 @@ bool StateMachine::lookup_tf(const std::string &to_frame, const std::string &fro
     return true;
 }
 
+
 bool StateMachine::tf_available() const{
     // Check if the TF of the human and robot are available
     return lookup_tf(human_frame_, map_frame_) && lookup_tf(robot_frame_, map_frame_);
 }
+
 
 double StateMachine::distance_to_human() const {  
     try {
@@ -347,8 +477,6 @@ geometry_msgs::msg::PoseStamped StateMachine::GetHumanPose() {
 }
 
 
-
-
 std::string StateMachine::state_to_string(const States state) const {
     // Return the string representation of the States enum
     switch (state) {
@@ -372,10 +500,8 @@ std::string StateMachine::state_to_string(const States state) const {
             return "WAIT_ARM_RETRACTING";
         case States::ERROR:
             return "ERROR";
-        case States::ABORTING:
-            return "ABORTING";
-        case States::ABORTED:
-            return "ABORTED";
+        case States::COMPLETED:
+            return "COMPLETED";
         default:
             return "UNKNOWN";
     }

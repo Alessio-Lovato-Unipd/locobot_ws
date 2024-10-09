@@ -11,25 +11,28 @@
 
 #include "LocobotControl.h"
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
-#include <geometry_msgs/msg/transform_stamped.hpp>
+#include "std_msgs/msg/string.hpp"
+#include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
+
 
 
 // Services and actions
 #include "simulation_interfaces/srv/last_error.hpp"
 #include "simulation_interfaces/srv/clear_error.hpp"
 #include "simulation_interfaces/srv/control_states.hpp"
-#include "simulation_interfaces/action/state_machine.hpp"
 
 #include <string>
 #include <chrono>
 #include <thread>
 #include <cmath>
 #include <mutex>
+#include <stdexcept>
 
 
 
@@ -49,22 +52,7 @@ enum class States : uint8_t {
     WAIT_GRIPPER,           // Wait for the gripper to open
     WAIT_ARM_RETRACTING,    // Wait for the arm to retract
     ERROR,                  // Error state
-    ABORTING,               // The task is being aborted
-    ABORTED                 // The task has been aborted
-};
-
-/**
- * @brief Enum class to represent the different results of the state machine.
- * 
- * The result of the state machine is used to determine the behavior of the main loop.
- */
-enum class Result : uint8_t {
-    SUCCESS,    // The machine has completed the task successfully
-    FAILURE,    // The machine has failed to complete the task
-    RUNNING,    // The machine is still running
-    ABORTING,   // The machine is aborting
-    ABORTED,    // The machine has been aborted
-    INITIALIZED // The machine has been initialized
+    COMPLETED               // The state machine has completed the task
 };
 
 
@@ -74,75 +62,60 @@ enum class Result : uint8_t {
  * The state machine is used to control the different states of the behavior of the robot.
  * The output of the state machine is expressed as a Result enum class.
  */
-class StateMachine : public LocobotControl {
+class StateMachine : public rclcpp_lifecycle::LifecycleNode {
 public:
-
-    using StateMachineAction = simulation_interfaces::action::StateMachine;
-    using GoalHandleStateMachine = rclcpp_action::ServerGoalHandle<StateMachineAction>;
     /**
      * @brief Construct a new State Machine object
-     * 
-     * The constructor initializes the state machine in the IDLE state and the result in INITIALIZED.
      */
     explicit StateMachine(
-        const rclcpp::NodeOptions & options = rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
+        const rclcpp::NodeOptions & options = rclcpp::NodeOptions().use_intra_process_comms(true))
+        : rclcpp_lifecycle::LifecycleNode("state_machine", "", options) {};
 
     // Functions
-    void nextState(); // Operate the state machine (send it to the next state)
+    void nextState(); // Operate the state machine (sends it to the next state)
     std::string getLastError() const {return errorMsg_;} // Get the last error message
-    bool clearError(); // Clear the error message
     States getMachineState() const {return state_;} // Get the current state of the machine
 
+    // Callbacks
+    /**
+     * @brief Callback to handle the configuration of the node.
+     * @return Success if the configuration is successful, Failure otherwise.
+     */
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_configure(
+        const rclcpp_lifecycle::State & state);
+
+    /**
+     * @brief Callback to handle the activation of the node.
+     * @return Success if the activation is successful, Failure otherwise.
+     */
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_activate(
+        const rclcpp_lifecycle::State & state);
+
+    /**
+     * @brief Callback to handle the deactivation of the node.
+     * @return Success if the deactivation is successful, Failure otherwise.
+     */
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_deactivate(
+        const rclcpp_lifecycle::State & state);
+
+    /**
+     * @brief Callback to handle the errors of the node.
+     * @return Success if the error is handled, Failure otherwise.
+     */
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_error(
+        const rclcpp_lifecycle::State & state);
+
+    /**
+     * @brief Callback to handle the shutdown of the node.
+     * @return Success if the shutdown is successful, Failure otherwise.
+     */
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_shutdown(
+        const rclcpp_lifecycle::State & state);
 
 private:
 
-    // Action server
-
-    rclcpp_action::Server<StateMachineAction>::SharedPtr action_server_; // Action server to control the state machine
-    
-    /**
-     * @brief Handle the goal request.
-     */
-    rclcpp_action::GoalResponse handle_goal(const rclcpp_action::GoalUUID & uuid,
-                            std::shared_ptr<const StateMachineAction::Goal> goal)
-    {
-        RCLCPP_INFO(this->get_logger(), "Received execution for State Machine");
-        if (requestedAbort_ || state_ == States::ERROR) {
-            if (state_ == States::ABORTED) {
-                RCLCPP_ERROR(this->get_logger(), "Goal rejected: machine is aborted. Please clear the ABORTED state.");
-            } else {
-                RCLCPP_ERROR(this->get_logger(), "Goal rejected: machine is in error. Please clear the ERROR state.");
-            }
-            return rclcpp_action::GoalResponse::REJECT;
-        } else {
-            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
-        }
-    }
-
-    /**
-     *  @brief Handle the cancel request.
-     */
-    rclcpp_action::CancelResponse handle_cancel(
-        const std::shared_ptr<GoalHandleStateMachine> goal_handle)
-    {
-        RCLCPP_INFO(this->get_logger(), "Received request to cancel goal");
-        (void)goal_handle;
-        std::lock_guard<std::mutex> lock(request_mutex_);
-        requestedAbort_ = true;
-        errorMsg_ = "Goal canceled by user";
-        return rclcpp_action::CancelResponse::ACCEPT;
-    }
-
-    /**
-     * @brief Handle the accepted goal.
-     */
-    void handle_accepted(const std::shared_ptr<GoalHandleStateMachine> goal_handle)
-    {
-        using namespace std::placeholders;
-        // this needs to return quickly to avoid blocking the executor, so spin up a new thread
-        std::thread{std::bind(&StateMachine::spinMachine, this, _1), goal_handle}.detach();
-    }
-
+    // Locobot Node
+    std::shared_ptr<LocobotControl> locobot_{nullptr}; // Node to handle the locobot control node
 
     // Last Error Service Server
     
@@ -165,17 +138,25 @@ private:
     rclcpp::Service<simulation_interfaces::srv::ClearError>::SharedPtr clear_error_service_; 
 
     /**
-     * @brief Service callback to clear the error (or aborted) state and message error.
+     * @brief Service callback to clear the error state and message error.
      * 
      * @note The machine will enter the IDLE state if possible.
      */
     void clear_error_callback(const std::shared_ptr<simulation_interfaces::srv::ClearError::Request> request,
-                           std::shared_ptr<simulation_interfaces::srv::ClearError::Response> response) {
+                            std::shared_ptr<simulation_interfaces::srv::ClearError::Response> response) {
 
-        response->successful = clear_error();
+        // Trigger the on_activate callback
+        result = this->activate();
+        if (result.label() != "Active") {
+            response->successful = false;
+            return;
+        }
+
+        // If both transitions are successful
+        response->successful = true;
     }
 
-    // Gripper control service server
+    // Status control service server
 
     // Service to control the state machine state changes
     rclcpp::Service<simulation_interfaces::srv::ControlStates>::SharedPtr control_state_service_; 
@@ -183,8 +164,8 @@ private:
     /**
      * @brief Service callback to control the state machine state's changes.
      * 
-     * @note The service allows to change the state of the machine to IDLE, NAVIGATION, INTERACTION, 
-     * or ABORT.
+     * @note The service allows to change the state of the machine to IDLE, NAVIGATION, INTERACTION and 
+     * send gripper commands.
      */
     void change_state_callback(const std::shared_ptr<simulation_interfaces::srv::ControlStates::Request> request,
                            std::shared_ptr<simulation_interfaces::srv::ControlStates::Response> response) {
@@ -222,13 +203,6 @@ private:
                 requestedGripperMovement_ = GripperState::GRASPING;
                 response->successful_request = true;
                 break;
-
-            case simulation_interfaces::srv::ControlStates::Request::ABORT:
-                requestedAbort_ = true;
-                requestedInteraction_ = false;
-                requestedNavigation_ = false;
-                response->successful_request = true;
-                break;
         
             default:
                 response->successful_request = false;
@@ -238,10 +212,9 @@ private:
 
 
 
-    // Variables
+    // Private Variables
 
     States state_{States::IDLE};  // Current state of the machine
-    Result result_{Result::INITIALIZED}; // Result of the machine
     std::string errorMsg_{""}; // Error message
     bool requestedAbort_{false}; // Request to abort the machine
     bool requestedNavigation_{false}; // Request to navigate to the human
@@ -257,28 +230,37 @@ private:
     geometry_msgs::msg::PoseStamped last_human_pose_; // Pose of the human
 
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};// Listener to the tf
-    std::unique_ptr<tf2_ros::Buffer> tf_buffer_;// Buffer for the tf
-    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_updater_; // Publisher to update the navigation goal
-    
+    std::unique_ptr<tf2_ros::Buffer> tf_buffer_{nullptr};// Buffer for the tf
+    rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_updater_{nullptr}; // Publisher to update the navigation goal
+    rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr info_publisher_{nullptr}; // Publisher to publish the state info
 
-    // Functions
-    void onError(); // Perform actions when in error state
-    void machineError(const std::string &msg); // Set the machine in error state and save the error message
+    // Main thread
+    std::thread main_thread_; // Main thread to operate the state machine
+    bool pause_main_thread_{true}; // Flag to stop the main thread
+    std::mutex main_thread_mutex_; // Mutex to protect the main thread
+
+    // Locobot thread
+    std::thread locobot_thread_; // Thread to operate the locobot control node
+    bool pause_locobot_thread_{true}; // Flag to stop the locobot thread
+    std::mutex locobot_thread_mutex_; // Mutex to protect the locobot thread
+    bool first_time_{true}; // Flag to indicate if the configuration is performed for the first time
+
+    // Private Functions
 
     /**
-     * @brief Function to operate the state machine.
-     * 
-     * The function is a loop that terminates when the machine is not in the RUNNING 
-     *  or ABORTING Result state. Otherwise, the machine will terminate when rclcpp is shutdown.
+     * @brief Save the error message and trigger the error transition.
      */
-    void spinMachine(const std::shared_ptr<GoalHandleStateMachine> goal_handle); // Spin the machine control object
+    void machineError(const std::string &msg);
 
     /**
-     * @brief Function to clear the error message and set the machine in the IDLE state.
-     * 
-     * @return True if the error can be cleared, false otherwise.
+     * @brief Main loop of the state machine.
      */
-    bool clear_error();
+    void mainLoop();
+
+    /**
+     * @brief Locobot control loop.
+     */
+    void locobotLoop(std::shared_ptr<LocobotControl> locobot);
 
     /**
      * @brief Function to determine if the TF of the human and robot are available.
@@ -322,15 +304,6 @@ private:
      * @return The string representation of the state.
      */
     std::string state_to_string(const States state) const;
-
-    /**
-     * @brief closes the gripper after the time has passed.
-     * 
-     * @note the time is set by parameter gripper_wait_time.
-     * 
-     * @return True if the gripper has closed, false otherwise.
-     */
-    bool close_gripper_after_time(); // Close the gripper after the time has passed
 
 };
 

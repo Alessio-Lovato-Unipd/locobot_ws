@@ -146,14 +146,16 @@ class NavigationStatus {
          * 
          * @param state The result from the navigation action server.
          */
-        void stopNavigation(const rclcpp_action::ResultCode state) {in_progress_ = false; navigation_result_ = state;};
+        void stopNavigation(const rclcpp_action::ResultCode state) {
+            in_progress_ = false; 
+            navigation_result_ = state;
+            state == rclcpp_action::ResultCode::SUCCEEDED ? in_error_ = false : in_error_ = true;
+        };
 
         /**
-         * @brief Set the navigation in error status.
-         * 
-         * @param in_error True if the navigation is in error, false otherwise.
+         * @brief Clear the navigation error status.
          */
-        void errorState(bool in_error) {in_error_ = in_error;};
+        void clearError() {in_error_ = false;};
 
         // Access functions
 
@@ -281,7 +283,7 @@ public:
     /**
      * @brief Reset the arm status to not moving and not in error.
      */
-    void ResetArmStatus() {arm_status_.errorState(false); arm_status_.errorState(false);};
+    void ResetArmStatus() {arm_status_.errorState(false); arm_status_.in_motion(false);};
 
     /**
      * @brief Cancel all the goals sent to the navigation server.
@@ -293,15 +295,20 @@ public:
      */
     bool cancelNavigationGoal();
 
-
+    // Return true if the navigation action server is available, false otherwise. Timeout is set to 1 second.
+    bool isNavigationServerAvailable() const {return this->client_ptr_->wait_for_action_server(std::chrono::seconds(1));};
     // Return true if the arm is moving or planning, false otherwise
     bool isArmMoving() const {return arm_status_.is_moving();};
     // Return true if the arm is in error (planning or execution failed), false otherwise
     bool isArmInError() const {return arm_status_.is_error();};
+    // Clear the arm error status
+    void clearArmError() {arm_status_.errorState(false);};
     // Return true if the navigation is in progress, false otherwise
     bool isNavigating() const {return navigation_status_.isMoving();};
     // Return true if the navigation is in error, false otherwise
     bool isNavigationInError() const {return navigation_status_.isError();};
+    // Clear the navigation error status
+    void clearNavigationError() {navigation_status_.clearError();};
     // Return the result of the navigation action server
     rclcpp_action::ResultCode NavigationResult() const {return navigation_status_.getResult();};
     // Return the estimated time of arrival
