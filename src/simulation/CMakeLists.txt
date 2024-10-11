@@ -78,17 +78,6 @@ install(TARGETS action_server
 
 
 # Demo program
-add_executable(demo src/demo.cpp)
-ament_target_dependencies(demo rclcpp
-                               geometry_msgs 
-                               nav2_msgs 
-                               rclcpp_action 
-                               rclcpp_components
-                               moveit_core
-                               moveit_ros_planning_interface
-                               moveit_msgs)
-target_include_directories(demo PUBLIC include)
-
 add_executable(demo_no_lidar src/demo_no_lidar.cpp)
 ament_target_dependencies(demo_no_lidar rclcpp
                                geometry_msgs 
@@ -103,7 +92,7 @@ target_include_directories(demo_no_lidar PUBLIC include)
 
 
 # Tf remapper
-add_executable(tf_remapper src/LocobotTracker.cpp)
+add_executable(tf_remapper src/TFRemapper.cpp)
 ament_target_dependencies(tf_remapper rclcpp
                                       geometry_msgs
                                       tf2_ros)
@@ -135,7 +124,6 @@ ament_target_dependencies(tf_publisher rclcpp
 
 # install targets
 install(TARGETS
-  demo
   demo_no_lidar
   tf_remapper
   arm_sleep_position

@@ -100,8 +100,8 @@ def launch_setup(context):
         namespace='locobot/env_camera_1',
         output='screen',
         parameters=[{'use_sim_time':True},
-                    {'camera_frame':'env_camera_1_frame'},
-                    {'look_for_map_tag': False}],
+                    {'target_frame':'locobot_tag'},
+                    {'source_frame':'env_camera_1_frame'}],
         remappings=[('/tf', '/tf_marker'),
                     ('/locobot/env_camera_1/tf_locobot', '/tf')]
     )
@@ -114,7 +114,8 @@ def launch_setup(context):
         namespace='locobot/env_camera_2',
         output='screen',
         parameters=[{'use_sim_time':True},
-                    {'camera_frame':'env_camera_2_frame'}],
+                    {'target_frame':'locobot_tag'},
+                    {'source_frame':'env_camera_2_frame'}],
         remappings=[('/tf', '/tf_marker'),
                     ('/locobot/env_camera_2/tf_locobot', '/tf')],
         condition=IfCondition(PythonExpression(['"', number, '" == "2"']))
