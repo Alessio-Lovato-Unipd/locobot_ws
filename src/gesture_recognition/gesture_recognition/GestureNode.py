@@ -79,7 +79,7 @@ class GestureRecognizer(Node):
     @param gesture The gesture string. 
     @note Possible values are:
         - 'Closed_Fist': Sets the state to CLOSE_GRIPPER.
-        - 'Victory': Sets the state to OPEN_GRIPPER.
+        - 'Pointing_Up': Sets the state to OPEN_GRIPPER.
         - 'Thumb_Up': Sets the state to NAVIGATION.
         - 'Thumb_Down': Sets the state to INTERACTION.
         - 'Open_Palm': Sets the state to IDLE.
@@ -89,7 +89,7 @@ class GestureRecognizer(Node):
         # Convert the string to the corresponding integer from the ControlStates message
         if gesture == 'Closed_Fist':
             self.req.state = ControlStates.Request.CLOSE_GRIPPER
-        elif gesture == 'Victory':
+        elif gesture == 'Pointing_Up':
             self.req.state = ControlStates.Request.OPEN_GRIPPER
         elif gesture == 'Thumb_Up':
             self.req.state = ControlStates.Request.NAVIGATION
@@ -97,6 +97,8 @@ class GestureRecognizer(Node):
             self.req.state = ControlStates.Request.INTERACTION
         elif gesture == 'Open_Palm':
             self.req.state = ControlStates.Request.IDLE
+        elif gesture == 'ILoveYou':
+            self.req.state = ControlStates.Request.ABORT
         else:
             return
         # Send the new state to the simulation
@@ -124,7 +126,7 @@ class GestureRecognizer(Node):
             if not gesture.category_name == 'None' and gesture.score > self.minimum_score:
                 # Prevent a gesture to be sent multiple times, except for the Victory and Closed_Fist gestures that can be repeated.
                 # Note that those gesture can be repeated since if they're sent during the wrong state, they will be ignored.
-                if self.last_gesture != gesture.category_name or gesture.category_name == 'Victory' or gesture.category_name == 'Closed_Fist':
+                if self.last_gesture != gesture.category_name or gesture.category_name == 'Pointing_Up' or gesture.category_name == 'Closed_Fist':
                     self.send_state(gesture.category_name)
                     self.last_gesture = gesture.category_name
                     rclpy.logging.get_logger('gesture_recognizer').info(f"Gesture: {gesture.category_name} with confidence {gesture.score}")

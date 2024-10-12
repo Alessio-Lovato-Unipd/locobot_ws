@@ -11,25 +11,25 @@ Documentation of the Mediapipe library is available [here](https://ai.google.dev
 
 ## Launch File
 
-The launch file `gesture_recognizer.launch.py` is used to start the gesture recognition node. It can optionally launch the RealSense camera based on the `launch_camera` argument.
+The launch file `gesture_recognizer.launch.py` is used to start the gesture recognition node. It can optionally launch the RealSense camera based on the `simulation` argument.
 
 ### Usage
 ```sh
-ros2 launch gesture_recognition gesture_recognizer.launch.py [launch_camera:=true|false]
+ros2 launch gesture_recognition gesture_recognizer.launch.py [simulation:=true|false]
 ```
 ### Arguments
 
-- `launch_camera` (default: `false`): Whether to launch the RealSense camera. Possible values are `true` or `false`.
+- `simulation` (default: `false`): Whether to launch the RealSense camera. Possible values are `true` or `false`.
 
 ### Example
 
 To launch the gesture recognition node without the RealSense camera:
 ```sh
-ros2 launch gesture_recognition gesture_recognizer.launch.py launch_camera:=false
+ros2 launch gesture_recognition gesture_recognizer.launch.py simulation:=false
 ```
 To launch the gesture recognition node with the RealSense camera:
 ```sh
-ros2 launch gesture_recognition gesture_recognizer.launch.py launch_camera:=true
+ros2 launch gesture_recognition gesture_recognizer.launch.py simulation:=true
 ```
 ## Gesture Recognition Node
 
@@ -54,10 +54,11 @@ The gesture recognition node (`gesture_recognizer_node`) recognizes gestures usi
 The gestures recognized by the node and their corresponding states are:
 
 - `Closed_Fist`: Sets the state to `CLOSE_GRIPPER`.
-- `Victory`: Sets the state to `OPEN_GRIPPER`.
+- `Pointing_up`: Sets the state to `OPEN_GRIPPER`.
 - `Thumb_Up`: Sets the state to `NAVIGATION`.
 - `Thumb_Down`: Sets the state to `INTERACTION`.
 - `Open_Palm`: Sets the state to `IDLE`.
+- `ILoveYou`: Sets the state to `ABORT`.
 
 ### Node Workflow
 
