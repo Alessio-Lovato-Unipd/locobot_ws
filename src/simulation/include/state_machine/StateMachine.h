@@ -172,6 +172,7 @@ private:
                 } else {
                     response->successful_request = false;
                 }
+                break;
 
             case simulation_interfaces::srv::ControlStates::Request::OPEN_GRIPPER:
                 if (state_ == States::ARM_EXTENDED) {
