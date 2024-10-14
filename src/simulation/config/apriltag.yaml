@@ -20,7 +20,7 @@ apriltag_node_1:                 # node name
     # If defined, 'frames' and 'sizes' must have the same length as 'ids'.
     tag:
       ids:    [3, 4]         # tag IDs for which to publish transform
-      frames: [locobot_tag, human_tag]   # frame names
+      frames: [human_tag, locobot_tag]   # frame names
       sizes:  [0.16, 0.16]     # tag-specific edge size, overrides the default 'size'
 
 apriltag_node_2:                 # node name
@@ -45,5 +45,5 @@ apriltag_node_2:                 # node name
     # If defined, 'frames' and 'sizes' must have the same length as 'ids'.
     tag:
       ids:    [3, 4]         # tag IDs for which to publish transform
-      frames: [locobot_tag, human_tag]   # frame names
+      frames: [human_tag, locobot_tag]   # frame names
       sizes:  [0.16, 0.16]     # tag-specific edge size, overrides the default 'size'

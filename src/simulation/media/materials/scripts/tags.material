@@ -6,7 +6,7 @@ material LocobotTag/Visual
     {
       texture_unit
       {
-        texture tag36_11_00003.png
+        texture tag36_11_00004.png
         filtering trilinear
       }
     }
