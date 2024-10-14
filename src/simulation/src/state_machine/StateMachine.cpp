@@ -293,12 +293,11 @@ bool StateMachine::clear_error() {
 bool StateMachine::lookup_tf(const std::string &to_frame, const std::string &from_frame) {
     // Check if the requested TF is available
     try {
-        // TODO: Perform the lookupTransform with a timeout to ensure the TF is available
         rclcpp::Time now = this->get_clock()->now();
         geometry_msgs::msg::TransformStamped t = tf_buffer_->lookupTransform(
                                                 from_frame, to_frame,
                                                 now,
-                                                std::chrono::milliseconds(200));
+                                                std::chrono::milliseconds(500));
     } catch (const tf2::TransformException & ex) {
         RCLCPP_ERROR(this->get_logger(), "TF %s -> %s not available", from_frame.c_str(), to_frame.c_str());
         return false;
@@ -315,7 +314,6 @@ double StateMachine::distance_to_human() const {
     try {
         // Get pose of the human and robot
         geometry_msgs::msg::TransformStamped human_tf, robot_tf;
-        // TODO: Perform the lookupTransform with a timeout to ensure the TF is available
         human_tf = tf_buffer_->lookupTransform(human_frame_, map_frame_, tf2::TimePointZero);
         robot_tf = tf_buffer_->lookupTransform(robot_frame_, map_frame_, tf2::TimePointZero);
 

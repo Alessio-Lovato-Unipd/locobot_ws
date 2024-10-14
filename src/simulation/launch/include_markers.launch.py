@@ -58,8 +58,7 @@ def launch_setup(context):
         name='apriltag_node_1',
         parameters= [os.path.join(get_package_share_directory('simulation'), 'config', 'apriltag.yaml')],
         remappings=[('/camera_info', '/locobot/env_camera_1/camera_info'),
-                    ('/image_rect', '/locobot/env_camera_1/image_raw'),
-                    ('/tf', '/tf_marker')],
+                    ('/image_rect', '/locobot/env_camera_1/image_raw')],
     )
 
     # Create apriltag node for camera 2
@@ -69,8 +68,7 @@ def launch_setup(context):
         name='apriltag_node_2',
         parameters= [os.path.join(get_package_share_directory('simulation'), 'config', 'apriltag.yaml')],
         remappings=[('/camera_info', '/locobot/env_camera_2/camera_info'),
-                    ('/image_rect', '/locobot/env_camera_2/image_raw'),
-                    ('/tf', '/tf_marker')],
+                    ('/image_rect', '/locobot/env_camera_2/image_raw')],
         condition=IfCondition(PythonExpression(['"', number, '" == "2"']))
     )
 
@@ -81,54 +79,22 @@ def launch_setup(context):
         name='locobot_tag_static_tf_broadcaster',
         arguments=[
             '--x', '0.0',
-            '--y', '0.0',
-            '--z', '0.0',
+            '--y', '0.127',
+            '--z', '-0.493',
             '--roll', '0.0',
             '--pitch', '0.0',
-            '--yaw', '-1.57076',
-            '--frame-id', 'apriltag_link',
-            '--child-frame-id', 'locobot_tag'
+            '--yaw', '1.57076',
+            '--frame-id', 'locobot_tag',
+            '--child-frame-id', 'locobot/base_footprint'
         ],
         output='screen'
-    )
-  
-    # Node that republish the tf from the apriltag_node_1 to the /tf topic
-    tf_remapper = Node(
-        package='simulation',
-        executable='tf_remapper',
-        name='tf_remapper_1',
-        namespace='locobot/env_camera_1',
-        output='screen',
-        parameters=[{'use_sim_time':True},
-                    {'target_frame':'locobot_tag'},
-                    {'source_frame':'env_camera_1_frame'},
-                    {'publish_frequency': 20.0}],
-        remappings=[('/tf', '/tf_marker'),
-                    ('/locobot/env_camera_1/tf_locobot', '/tf')]
-    )
-
-    # Node that republish the tf from the apriltag_node_2 to the /tf topic
-    tf_remapper_2 = Node(
-        package='simulation',
-        executable='tf_remapper',
-        name='tf_remapper_2',
-        namespace='locobot/env_camera_2',
-        output='screen',
-        parameters=[{'use_sim_time':True},
-                    {'target_frame':'locobot_tag'},
-                    {'source_frame':'env_camera_2_frame'},
-                    {'publish_frequency': 20.0}],
-        remappings=[('/tf', '/tf_marker'),
-                    ('/locobot/env_camera_2/tf_locobot', '/tf')],
-        condition=IfCondition(PythonExpression(['"', number, '" == "2"']))
     )
 
     # Create event handlers to create a proper sequence of actions
 
     delayed_spawn = TimerAction(
         period=2.0, #Delay in seconds
-        actions=[apriltag_static_broadcaster,
-                     tf_remapper, tf_remapper_2, apriltag_node_1, apriltag_node_2]
+        actions=[apriltag_static_broadcaster, apriltag_node_1, apriltag_node_2]
     )   
 
     # Return the actions
