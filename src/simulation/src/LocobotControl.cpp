@@ -51,7 +51,6 @@ LocobotControl::LocobotControl(const std::string name, const std::string ns, con
 }
 
 
-
 // BASE
 
 void LocobotControl::MoveBaseTo(const geometry_msgs::msg::PoseStamped &pose,
@@ -112,17 +111,16 @@ void LocobotControl::result_callback(const GoalHandle::WrappedResult &result) {
             RCLCPP_INFO(this->get_logger(), "Goal succeeded");
             break;
         case rclcpp_action::ResultCode::ABORTED:
-            navigation_status_.errorState(true);
             RCLCPP_INFO(this->get_logger(), "Goal was aborted");
             break;
         case rclcpp_action::ResultCode::CANCELED:
             RCLCPP_INFO(this->get_logger(), "Goal was canceled");
             break;
         default:
-            navigation_status_.errorState(true);
             RCLCPP_ERROR(this->get_logger(), "Unknown result code");
             break;
     }
+
 }
 
 
@@ -244,6 +242,7 @@ void LocobotControl::StopArm(std::optional<std::string> arm_interface_name,
                                     gripper_interface_name.value_or(gripper_interface_name_));
     move_group_interface.stop();
     arm_status_.in_motion(false);
+    arm_status_.errorState(false);
     arm_status_.updateStatus(ArmPose::UNKNOWN, GripperState::UNKNOWN);
 }
 

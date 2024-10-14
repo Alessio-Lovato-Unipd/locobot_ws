@@ -13,7 +13,9 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
-#include <geometry_msgs/msg/transform_stamped.hpp>
+#include "std_msgs/msg/u_int8.hpp"
+#include "std_msgs/msg/string.hpp"
+#include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
@@ -23,7 +25,6 @@
 #include "simulation_interfaces/srv/last_error.hpp"
 #include "simulation_interfaces/srv/clear_error.hpp"
 #include "simulation_interfaces/srv/control_states.hpp"
-#include "simulation_interfaces/action/state_machine.hpp"
 
 #include <string>
 #include <chrono>
@@ -49,8 +50,8 @@ enum class States : uint8_t {
     WAIT_GRIPPER,           // Wait for the gripper to open
     WAIT_ARM_RETRACTING,    // Wait for the arm to retract
     ERROR,                  // Error state
-    ABORTING,               // The task is being aborted
-    ABORTED                 // The task has been aborted
+    ABORT,                  // Abort the machine
+    STOPPING                // Stop the machine
 };
 
 /**
@@ -59,11 +60,9 @@ enum class States : uint8_t {
  * The result of the state machine is used to determine the behavior of the main loop.
  */
 enum class Result : uint8_t {
-    SUCCESS,    // The machine has completed the task successfully
+    SUCCESS,    // The machine has completed the task successfully and the main loop terminates
     FAILURE,    // The machine has failed to complete the task
     RUNNING,    // The machine is still running
-    ABORTING,   // The machine is aborting
-    ABORTED,    // The machine has been aborted
     INITIALIZED // The machine has been initialized
 };
 
@@ -77,8 +76,6 @@ enum class Result : uint8_t {
 class StateMachine : public LocobotControl {
 public:
 
-    using StateMachineAction = simulation_interfaces::action::StateMachine;
-    using GoalHandleStateMachine = rclcpp_action::ServerGoalHandle<StateMachineAction>;
     /**
      * @brief Construct a new State Machine object
      * 
@@ -87,62 +84,18 @@ public:
     explicit StateMachine(
         const rclcpp::NodeOptions & options = rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
 
+    /**
+     * @brief Destructor
+     */
+    ~StateMachine();
+
     // Functions
     void nextState(); // Operate the state machine (send it to the next state)
     std::string getLastError() const {return errorMsg_;} // Get the last error message
-    bool clearError(); // Clear the error message
     States getMachineState() const {return state_;} // Get the current state of the machine
 
 
 private:
-
-    // Action server
-
-    rclcpp_action::Server<StateMachineAction>::SharedPtr action_server_; // Action server to control the state machine
-    
-    /**
-     * @brief Handle the goal request.
-     */
-    rclcpp_action::GoalResponse handle_goal(const rclcpp_action::GoalUUID & uuid,
-                            std::shared_ptr<const StateMachineAction::Goal> goal)
-    {
-        RCLCPP_INFO(this->get_logger(), "Received execution for State Machine");
-        if (requestedAbort_ || state_ == States::ERROR) {
-            if (state_ == States::ABORTED) {
-                RCLCPP_ERROR(this->get_logger(), "Goal rejected: machine is aborted. Please clear the ABORTED state.");
-            } else {
-                RCLCPP_ERROR(this->get_logger(), "Goal rejected: machine is in error. Please clear the ERROR state.");
-            }
-            return rclcpp_action::GoalResponse::REJECT;
-        } else {
-            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
-        }
-    }
-
-    /**
-     *  @brief Handle the cancel request.
-     */
-    rclcpp_action::CancelResponse handle_cancel(
-        const std::shared_ptr<GoalHandleStateMachine> goal_handle)
-    {
-        RCLCPP_INFO(this->get_logger(), "Received request to cancel goal");
-        (void)goal_handle;
-        std::lock_guard<std::mutex> lock(request_mutex_);
-        requestedAbort_ = true;
-        errorMsg_ = "Goal canceled by user";
-        return rclcpp_action::CancelResponse::ACCEPT;
-    }
-
-    /**
-     * @brief Handle the accepted goal.
-     */
-    void handle_accepted(const std::shared_ptr<GoalHandleStateMachine> goal_handle)
-    {
-        using namespace std::placeholders;
-        // this needs to return quickly to avoid blocking the executor, so spin up a new thread
-        std::thread{std::bind(&StateMachine::spinMachine, this, _1), goal_handle}.detach();
-    }
-
 
     // Last Error Service Server
     
@@ -193,34 +146,49 @@ private:
         
         // Lock the mutex to protect the state machine from concurrent access at the request variables
         std::lock_guard<std::mutex> lock(request_mutex_);
-       
+        
         switch (request->state) {
             case simulation_interfaces::srv::ControlStates::Request::IDLE:
-                requestedInteraction_ = false;
-                requestedNavigation_ = false;
-                response->successful_request = true;
+                    requestedInteraction_ = false;
+                    requestedNavigation_ = false;
+                    response->successful_request = true;
                 break;
 
             case simulation_interfaces::srv::ControlStates::Request::NAVIGATION:
-                requestedNavigation_ = true;
-                requestedInteraction_ = false;
-                response->successful_request = true;
+                if (state_ == States::IDLE) {
+                    requestedNavigation_ = true;
+                    requestedInteraction_ = false;
+                    response->successful_request = true;
+                } else {
+                    response->successful_request = false;
+                }
                 break;
 
             case simulation_interfaces::srv::ControlStates::Request::INTERACTION:
-                requestedNavigation_ = false;
-                requestedInteraction_ = true;
-                response->successful_request = true;
-                break;
+                if (state_ == States::IDLE) {
+                    requestedNavigation_ = false;
+                    requestedInteraction_ = true;
+                    response->successful_request = true;
+                } else {
+                    response->successful_request = false;
+                }
 
             case simulation_interfaces::srv::ControlStates::Request::OPEN_GRIPPER:
-                requestedGripperMovement_ = GripperState::RELEASED;
-                response->successful_request = true;
+                if (state_ == States::ARM_EXTENDED) {
+                    requestedGripperMovement_ = GripperState::RELEASED;
+                    response->successful_request = true;
+                } else {
+                    response->successful_request = false;
+                }
                 break;
 
             case simulation_interfaces::srv::ControlStates::Request::CLOSE_GRIPPER:
-                requestedGripperMovement_ = GripperState::GRASPING;
-                response->successful_request = true;
+                if (state_ == States::ARM_EXTENDED) {
+                    requestedGripperMovement_ = GripperState::GRASPING;  
+                    response->successful_request = true;
+                } else {
+                    response->successful_request = false;
+                }
                 break;
 
             case simulation_interfaces::srv::ControlStates::Request::ABORT:
@@ -230,7 +198,7 @@ private:
                 response->successful_request = true;
                 break;
         
-            default:
+            default:  
                 response->successful_request = false;
                 break;
         }
@@ -251,27 +219,28 @@ private:
     std::string robot_frame_; // Frame of the robot tag
     std::string map_frame_; // Frame of the map tag
     std::string human_frame_; // Frame of the human tag
-    std::string goal_update_topic_; // Topic to update the navigation goal
     bool follow_human_; // Follow the human or not after the first position
     int sleep_time_; // Sleep time in milliseconds for the state machine cycle
     geometry_msgs::msg::PoseStamped last_human_pose_; // Pose of the human
 
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};// Listener to the tf
-    std::unique_ptr<tf2_ros::Buffer> tf_buffer_;// Buffer for the tf
+    std::unique_ptr<tf2_ros::Buffer> tf_buffer_{nullptr};// Buffer for the tf
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_updater_; // Publisher to update the navigation goal
-    
+    //rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr state_publisher_; // Publisher to update the state of the machine
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_publisher_;
+    std::thread machine_thread_; // Thread to operate the state machine
+    std::thread arm_thread_; // Thread that operates the gripper and arm
 
     // Functions
-    void onError(); // Perform actions when in error state
     void machineError(const std::string &msg); // Set the machine in error state and save the error message
 
     /**
      * @brief Function to operate the state machine.
      * 
-     * The function is a loop that terminates when the machine is not in the RUNNING 
-     *  or ABORTING Result state. Otherwise, the machine will terminate when rclcpp is shutdown.
+     * The function is a loop that operates the state machine. The loop is executed until the
+     * result state is different from RUNNING or INITIALIZED.
      */
-    void spinMachine(const std::shared_ptr<GoalHandleStateMachine> goal_handle); // Spin the machine control object
+    void spinMachine(); // Spin the machine control object
 
     /**
      * @brief Function to clear the error message and set the machine in the IDLE state.
@@ -285,7 +254,7 @@ private:
      * 
      * @return True if the TF of the human and robot are available, false otherwise.
      */
-    bool tf_available() const;
+    bool tf_available();
 
     /**
      * @brief Function to determine if the requested TF is available.
@@ -295,7 +264,7 @@ private:
      * 
      * @return True if the requested TF is available, false otherwise.
      */
-    bool lookup_tf(const std::string &to_frame, const std::string &from_frame) const;
+    bool lookup_tf(const std::string &to_frame, const std::string &from_frame);
 
     /**
      * @brief Function to calculate the planar Euclidean distance between the robot and the human.
@@ -322,15 +291,6 @@ private:
      * @return The string representation of the state.
      */
     std::string state_to_string(const States state) const;
-
-    /**
-     * @brief closes the gripper after the time has passed.
-     * 
-     * @note the time is set by parameter gripper_wait_time.
-     * 
-     * @return True if the gripper has closed, false otherwise.
-     */
-    bool close_gripper_after_time(); // Close the gripper after the time has passed
 
 };
 

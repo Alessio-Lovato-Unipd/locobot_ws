@@ -8,37 +8,32 @@
 
 
 void StateMachine::machineError(const std::string &msg) {
-    state_ = States::ERROR;
+    state_ = States::STOPPING;
     errorMsg_ = msg;
 }
 
 void StateMachine::nextState() {
 
     // Check if Tf of both human and robot are available
-    if (!tf_available()) {
+    if (state_ != States::ERROR && !tf_available()) {
         machineError("TF not available");
-    } else if (robot_frame_ == "" || map_frame_ == "" || human_frame_ == "") { // Check if the robot frame and map tag frame are available
-        machineError("Robot frame or map tag frame not passed as parameters");
     }
-    // Mutex to protect the state machine
+    // Mutex to protect the state machine and read the requested states
     std::unique_lock<std::mutex> lock(request_mutex_);
-
-    if (requestedAbort_ && state_!= States::ABORTED) // Check if an abort has been requested
-        state_ = States::ABORTING;
-    
+    bool requestedAbort = requestedAbort_;
+    bool requestedNavigation = requestedNavigation_;
+    bool requestedInteraction = requestedInteraction_;
+    GripperState requestedGripperMovement = requestedGripperMovement_;
     lock.unlock();
+
+    if (requestedAbort)
+        state_ = States::ABORT;
 
     switch (state_) {
         case States::IDLE: // Initial state, wait for a new command
-            lock.lock();
-            if (requestedAbort_) {
-                lock.unlock();
-                state_ = States::ABORTING;
-            } else if (requestedNavigation_) {
-                lock.unlock();
+            if (requestedNavigation) {
                 state_ = States::SECURE_ARM;
-            } else if (requestedInteraction_) {
-                lock.unlock();
+            } else if (requestedInteraction) {
                 SetArmPose(ArmPose::HOME);
                 state_ = States::WAIT_ARM_EXTENDING;
             }
@@ -77,19 +72,14 @@ void StateMachine::nextState() {
                 nav_goal_updater_->publish(GetHumanPose());
 
             // Check if the navigation has completed
-            lock.lock();
-            if (!requestedNavigation_) { // Human has stopped navigation    
-                lock.unlock();
+            if (!requestedNavigation) { // Human has stopped navigation    
                 if(isNavigating()) {
                     cancelNavigationGoal();
                 }
-                lock.lock();
-                if (requestedInteraction_) { // Human has requested interaction
-                    lock.unlock();
+                if (requestedInteraction) { // Human has requested interaction
                     SetArmPose(ArmPose::HOME);
                     state_ = States::WAIT_ARM_EXTENDING;
                 } else {
-                    lock.unlock();
                     state_ = States::IDLE;
                 }
             } else if (!isNavigating()) { // Goal has been reached but human is still moving
@@ -112,15 +102,12 @@ void StateMachine::nextState() {
 
         case States::ARM_EXTENDED:  // Open the gripper to release the object upon command
             // Open the gripper if allowed
-            lock.lock();
-            if (requestedGripperMovement_ != GripperCurrentState() 
-                        && requestedGripperMovement_ != GripperState::UNKNOWN) {
-                lock.unlock();
-                SetGripper(requestedGripperMovement_);
-                requestedGripperMovement_ = GripperState::UNKNOWN;
+            if (requestedGripperMovement != GripperCurrentState() 
+                        && requestedGripperMovement != GripperState::UNKNOWN) {
                 state_ = States::WAIT_GRIPPER;
-            } else if (!requestedInteraction_) {
-                lock.unlock();
+                SetGripper(requestedGripperMovement);
+                requestedGripperMovement = GripperState::UNKNOWN;
+            } else if (!requestedInteraction) {
                 SetArmPose(ArmPose::SLEEP);
                 state_ = States::WAIT_ARM_RETRACTING;
             }
@@ -144,33 +131,20 @@ void StateMachine::nextState() {
             }
             break;
 
+        case States::STOPPING:
+            StopArm();
+            cancelNavigationGoal();
+            state_ = States::ERROR;
+            break;
 
         case States::ERROR:  // The machine is in error
+            break;
+
+        case States::ABORT:  // The machine is aborted
             StopArm(); // Stop the arm movement
             cancelNavigationGoal(); // Cancel the navigation goal
-            result_ =  Result::FAILURE;
+            clear_error();
             break;
-
-
-        case States::ABORTING:  // The machine is aborting
-            result_ = Result::ABORTING;
-            state_ = States::ABORTED;
-            StopArm(); // Stop the arm movement
-
-            // N.B. Arm will be in error state due to abortion of ExecutePlan
-            //      The error state is cleared in the clear_error() function
-
-            // Stop the navigation
-            if (!cancelNavigationGoal())
-                    machineError("Navigation cancel failed");
-    
-            break;
-
-
-        case States::ABORTED:  // The machine is aborted
-            result_ = Result::ABORTED;
-            break;
-
     }
 }
 
@@ -192,14 +166,35 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
     this->declare_parameter("goal_update_topic", "goal_update", param_desc);
     param_desc.description = "Time [ms] to sleep between cycles of the state machine";
     this->declare_parameter("sleep_time", 100, param_desc);
+    param_desc.description = "Topic where the state of the state machine is published";
+    this->declare_parameter("state_topic", "machine_state", param_desc);
 
     // Save parameters
     robot_frame_ = this->get_parameter("robot_tag_frame").as_string();
     map_frame_ = this->get_parameter("map_frame").as_string();
     human_frame_ = this->get_parameter("human_tag_frame").as_string();
     follow_human_ = this->get_parameter("follow_human").as_bool();
-    goal_update_topic_ = this->get_parameter("goal_update_topic").as_string();
     sleep_time_ = this->get_parameter("sleep_time").as_int();
+
+    if (robot_frame_ == "") {
+        RCLCPP_ERROR(this->get_logger(), "Robot frame was an empty string");
+        throw std::invalid_argument("Robot frame was an empty string");
+    } else if (map_frame_ == "") {
+        RCLCPP_ERROR(this->get_logger(), "Map frame was an empty string");
+        throw std::invalid_argument("Map frame was an empty string");
+    } else if (human_frame_ == "") {
+        RCLCPP_ERROR(this->get_logger(), "Human frame was an empty string");
+        throw std::invalid_argument("Human frame was an empty string");
+    } else if (this->get_parameter("goal_update_topic").as_string() == "") {
+        RCLCPP_ERROR(this->get_logger(), "Goal update topic was an empty string");
+        throw std::invalid_argument("Goal update topic was an empty string");
+    } else if (this->get_parameter("sleep_time").as_int() <= 0) {
+        RCLCPP_ERROR(this->get_logger(), "Sleep time must be greater than 0");
+        throw std::invalid_argument("Sleep time must be greater than 0");
+    }else if (this->get_parameter("state_topic").as_string() == "") {
+        RCLCPP_ERROR(this->get_logger(), "State topic was an empty string");
+        throw std::invalid_argument("State topic was an empty string");
+    }
 
     // Initialize the tf buffer and listener
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -207,13 +202,6 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
     
     // Create the action server
     using namespace std::placeholders;
-
-    this->action_server_ = rclcpp_action::create_server<StateMachineAction>(
-      this,
-      "state_machine_server",
-      std::bind(&StateMachine::handle_goal, this, _1, _2),
-      std::bind(&StateMachine::handle_cancel, this, _1),
-      std::bind(&StateMachine::handle_accepted, this, _1));
 
     // Create the last error service
     get_last_error_ = this->create_service<simulation_interfaces::srv::LastError>(
@@ -228,76 +216,89 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
         "state_control", std::bind(&StateMachine::change_state_callback, this, _1, _2));
 
     // Create the update goal publisher
-    nav_goal_updater_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(goal_update_topic_, 10);
+    nav_goal_updater_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(this->get_parameter("goal_update_topic").as_string(), 10);
 
+    // Create the state publisher
+    state_publisher_ = this->create_publisher<std_msgs::msg::String>(this->get_parameter("state_topic").as_string(), 10);
+
+    // Create the thread to spin the machine
+    machine_thread_ = std::thread(&StateMachine::spinMachine, this);
 }
 
 
-void StateMachine::spinMachine(const std::shared_ptr<GoalHandleStateMachine> goal_handle) {
-    // Define feedback message and result
-    auto feedback = std::make_shared<simulation_interfaces::action::StateMachine::Feedback>();
-    uint8_t &status = feedback->current_state;
-    auto result = std::make_shared<simulation_interfaces::action::StateMachine::Result>();
-    status = static_cast<uint8_t>(state_);
-    goal_handle->publish_feedback(feedback);
+StateMachine::~StateMachine() {
+    // Stop the arm
+    StopArm();
+    // Cancel the navigation goal
+    cancelNavigationGoal();
+    // Set the result to completed
+    result_ = Result::SUCCESS;
+    //wait the thread to finish
+    if (machine_thread_.joinable()) {
+        machine_thread_.join();
+    }
+}
+
+
+void StateMachine::spinMachine() {
+    // Initialize the feedback message
     States last_status = state_;
     // Main loop
     while (rclcpp::ok()) {
-        if (result_ != Result::RUNNING && result_ != Result::ABORTING && result_ != Result::INITIALIZED) {
+        if (result_ == Result::SUCCESS)
             break;
-        }
+
+        // Update the feedback message
+        std_msgs::msg::String status;
+        status.data = state_to_string(state_);
+        state_publisher_->publish(status);
+
         if (last_status != state_) {
             last_status = state_;
             RCLCPP_INFO(this->get_logger(), "Status: %s", state_to_string(state_).c_str());
         }
-        // Check if the goal has been canceled
-
         nextState();
-
-        // Update the feedback message
-        status = static_cast<uint8_t>(state_);
-        goal_handle->publish_feedback(feedback);
         std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time_));
     }
-
-    if (requestedAbort_) {
-        goal_handle->canceled(result);
-    } else if (result_ == Result::SUCCESS) {
-        goal_handle->succeed(result);
-    } else {
-        goal_handle->abort(result);
-    }
-
+    
 }  
 
 bool StateMachine::clear_error() {
     // Clear the error message and set the machine in the IDLE state
-    if (state_ == States::ERROR || state_ == States::ABORTED) {
-        errorMsg_ = "";
-        requestedNavigation_ = false;
-        requestedInteraction_ = false;
-        requestedGripperMovement_ = GripperState::UNKNOWN;
-        // If an aborted request has been made, Moveit throws an error but the machine is not in error
-        if (requestedAbort_){
-            requestedAbort_ = false;
-            ResetArmStatus();
-        }
-        RCLCPP_INFO(this->get_logger(), "Error cleared. Machine in IDLE state");
-        state_ = States::IDLE;
-        result_ = Result::INITIALIZED;
-        return true;
+    if (state_ != States::ERROR && state_ != States::ABORT) 
+        return false;
+
+    errorMsg_ = "";
+    std::unique_lock<std::mutex> lock(request_mutex_);
+    requestedNavigation_ = false;
+    requestedInteraction_ = false;
+    requestedGripperMovement_ = GripperState::UNKNOWN;
+    requestedAbort_ = false;
+    while (isArmMoving()) {
+        // Wait for the arm to stop
     }
-    return false;
+    clearArmError();
+    while(isNavigating()) {
+        // Wait for the server to cancel the goal
+    }
+    clearNavigationError();
+    result_ = Result::INITIALIZED;
+    state_ = States::IDLE;
+    lock.unlock();
+    RCLCPP_INFO(this->get_logger(), "Error cleared. Machine in IDLE state");
+    return true;
 }
 
 
-bool StateMachine::lookup_tf(const std::string &to_frame, const std::string &from_frame) const {
+bool StateMachine::lookup_tf(const std::string &to_frame, const std::string &from_frame) {
     // Check if the requested TF is available
     try {
         // TODO: Perform the lookupTransform with a timeout to ensure the TF is available
+        rclcpp::Time now = this->get_clock()->now();
         geometry_msgs::msg::TransformStamped t = tf_buffer_->lookupTransform(
                                                 from_frame, to_frame,
-                                                tf2::TimePointZero);
+                                                now,
+                                                std::chrono::milliseconds(200));
     } catch (const tf2::TransformException & ex) {
         RCLCPP_ERROR(this->get_logger(), "TF %s -> %s not available", from_frame.c_str(), to_frame.c_str());
         return false;
@@ -305,9 +306,9 @@ bool StateMachine::lookup_tf(const std::string &to_frame, const std::string &fro
     return true;
 }
 
-bool StateMachine::tf_available() const{
+bool StateMachine::tf_available(){
     // Check if the TF of the human and robot are available
-    return lookup_tf(human_frame_, map_frame_) && lookup_tf(robot_frame_, map_frame_);
+    return (lookup_tf(robot_frame_, map_frame_) && lookup_tf(human_frame_, map_frame_));
 }
 
 double StateMachine::distance_to_human() const {  
@@ -335,7 +336,7 @@ double StateMachine::distance_to_human() const {
 geometry_msgs::msg::PoseStamped StateMachine::GetHumanPose() {
     // Get the pose of the human relative to the map frame
     geometry_msgs::msg::TransformStamped human_tf;
-    human_tf = tf_buffer_->lookupTransform(map_frame_, human_frame_, tf2::TimePointZero);
+    human_tf = tf_buffer_->lookupTransform(map_frame_, human_frame_, tf2::TimePointZero); // Get last pose, no need for check
     geometry_msgs::msg::PoseStamped pose;
     pose.header.stamp = get_clock()->now();
     pose.header.frame_id = map_frame_;
@@ -372,10 +373,10 @@ std::string StateMachine::state_to_string(const States state) const {
             return "WAIT_ARM_RETRACTING";
         case States::ERROR:
             return "ERROR";
-        case States::ABORTING:
-            return "ABORTING";
-        case States::ABORTED:
-            return "ABORTED";
+        case States::ABORT:
+            return "ABORT";
+        case States::STOPPING:
+            return "STOPPING";
         default:
             return "UNKNOWN";
     }
