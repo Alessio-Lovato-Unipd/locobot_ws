@@ -34,3 +34,9 @@
 	path = src/sophus
 	url = https://github.com/clalancette/sophus.git
 	branch = clalancette/fix-compiler-error
+[submodule "src/Azure_Kinect_ROS_Driver"]
+	path = src/Azure_Kinect_ROS_Driver
+	url = https://github.com/mguidolin/Azure_Kinect_ROS_Driver.git
+[submodule "src/apriltag_ros"]
+	path = src/apriltag_ros
+	url = https://github.com/Adlink-ROS/apriltag_ros.git
