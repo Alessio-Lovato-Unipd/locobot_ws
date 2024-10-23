@@ -26,6 +26,27 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+"""
+@file simulation_no_lidar.launch.py
+
+@brief This file is used to launch a complete simulation of the Locobot without the lidar sensor. Gazebosim classic is used.
+
+@details The simulation includes the Interbotix Locobot, the AprilTag markers, the MoveIt2 and Navigation2. The files
+'include_camera.launch.py' and 'include_markers.launch.py' are included in this launch file to include the camera and
+the markers in the simulation. The file 'navigation_3D.rviz' is used to visualize the simulation in RViz2.
+
+@param params_file: the file path to the params YAML file. (default: 'config/navigation.yaml')
+@param robot_name: name of the robot (default: 'locobot')
+@param base_type: type of the base (default: 'kobuki')
+@param external_srdf_loc: the file path to the custom semantic description file that you would like to include in the Interbotix robot's semantic description. (default: '')
+@param external_urdf_loc: the file path to the custom URDF file that you would like to include in the Interbotix robot. (default: 'urdf/locobot_tag.urdf.xacro')
+@param camera_number: Number of cameras to be included in the simulation. Can be 1 or 2. (default: 1)
+@param spawn_obstacle: Flag to spawn an obstacle in the simulation. Can be true or false. (default: true)
+
+@note This file is a blend of the launch files 'interbotix_xslocobot_sim.launch.py', 'interbotix_xslocobot_moveit.launch.py' and 'navigation2.launch.py' 
+from the 'interbotix_xslocobot_sim', 'interbotix_xslocobot_moveit' and 'navigation2_bringup' packages.
+"""
+
 import os
 import yaml
 
@@ -40,26 +61,25 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
-    OpaqueFunction,
     GroupAction,
     SetEnvironmentVariable,
-    RegisterEventHandler,
     TimerAction
 )
-from launch.event_handlers import OnProcessExit, OnProcessStart
-from launch.conditions import IfCondition, LaunchConfigurationEquals
+from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     EnvironmentVariable,
     LaunchConfiguration,
-    PathJoinSubstitution,
-    PythonExpression,
-    TextSubstitution
+    PathJoinSubstitution
 )
-from launch_ros.actions import Node, SetRemap
-from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.actions import (
+    Node,
+    SetRemap,
+    LoadComposableNodes,
+    ComposableNodeContainer
+)
 from launch_ros.substitutions import FindPackageShare
-from launch_ros.descriptions import ParameterFile
+from launch_ros.descriptions import ParameterFile, ComposableNode
 from nav2_common.launch import RewrittenYaml
 
 
@@ -78,26 +98,13 @@ def load_yaml(package_name, file_path):
 def generate_launch_description():
 
     # Declare launch arguments
-    map_yaml_file = LaunchConfiguration('map')
     params_file = LaunchConfiguration('params_file')
     robot_name = LaunchConfiguration('robot_name')
     base_type = LaunchConfiguration('base_type')
     external_srdf_loc = LaunchConfiguration('external_srdf_loc')
     external_urdf_loc = LaunchConfiguration('external_urdf_loc')
-    camera_number = LaunchConfiguration('camera_number')
 
     # Launch arguments' default values
-    map_yaml_file_launch_arg = DeclareLaunchArgument(
-            'map',
-            default_value=PathJoinSubstitution([
-                FindPackageShare('simulation'),
-                'maps',
-                'simulation_map',
-                'simulation_map.yaml'
-            ]),
-            description='the file path to the map YAML file.'
-    )
-
     params_file_launch_arg = DeclareLaunchArgument(
             'params_file',
             default_value=PathJoinSubstitution([
@@ -135,10 +142,27 @@ def generate_launch_description():
             description='the file path to the custom URDF file that you would like to include in the Interbotix robot.',
     )
 
-    camera_number_arg = DeclareLaunchArgument(
+    camera_number_launch_arg = DeclareLaunchArgument(
             'camera_number',
             default_value='1',
-            description='number of cameras in the simulation (must be 1 or 2).',
+            choices=['1', '2'],
+            description='Number of cameras to be included in the simulation. Can be 1 or 2.',
+    )
+
+    spawn_obstacle_launch_arg = DeclareLaunchArgument(
+            'spawn_obstacle',
+            default_value='true',
+            description='Flag to spawn an obstacle in the simulation. Can be true or false.',
+            choices=['true', 'false']
+    )
+
+    # Declare the 'container' launch configuration
+    arg_container = DeclareLaunchArgument(
+        name='container', default_value='',
+        description=(
+            'Name of an existing node container to load launched nodes into. '
+            'If unset, a new container will be created.'
+        )
     )
 
 ############################################################################################################
@@ -173,6 +197,20 @@ def generate_launch_description():
             'use_gazebo_debug': 'false',
             
         }.items()
+    )
+
+    obstacle_model_path = PathJoinSubstitution([FindPackageShare("simulation"), 
+                                            'models', 'obstacle', 'model.sdf'])
+
+    spawn_obstacle = Node(
+        condition=LaunchConfigurationEquals('spawn_obstacle', 'true'),
+        package="gazebo_ros",
+        executable="spawn_entity.py",
+        name="spawn_camera_1",
+        arguments=["-entity", "obstacle", "-file", obstacle_model_path, 
+                   '-x', '0.0', '-y', '1.0', '-z', '0.0',
+                   '-R', '0.0', '-P', '0.0', '-Y', '0.0'],
+        output="screen"
     )
 ############################################################################################################
 ##############################################  MOVEIT2  ###################################################
@@ -321,53 +359,114 @@ def generate_launch_description():
 ############################################  NAVIGATION2  #################################################
 ############################################################################################################
 
-    # Navigation2 bringup launch
-    package = FindPackageShare('simulation')
-    nav2_launch_file_dir = PathJoinSubstitution(
-        [FindPackageShare('nav2_bringup'), 'launch', 'navigation_launch.py']
-    )
-
     configured_params = ParameterFile(
         RewrittenYaml(
-            source_file=params_file,
-            root_key='',
-            param_rewrites={},
+            source_file=LaunchConfiguration('params_file'),
+            param_rewrites={'autostart': 'True'},
             convert_types=True,
         ),
         allow_substs=True,
     )
+
+    # Map fully qualified names to relative ones so the node's namespace can be prepended.
+    # In case of the transforms (tf), currently, there doesn't seem to be a better alternative
+    # https://github.com/ros/geometry2/issues/32
+    # https://github.com/ros/robot_state_publisher/pull/30
+    # TODO(orduno) Substitute with `PushNodeRemapping`
+    #              https://github.com/ros2/launch_ros/issues/56
+    remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
+
+    lifecycle_nodes = [
+        'controller_server',
+        'planner_server',
+        'behavior_server',
+        'bt_navigator',
+        'velocity_smoother',
+        'map_server',
+    ]
+
+    composable_nodes = [
+        ComposableNode(
+            package='nav2_controller',
+            plugin='nav2_controller::ControllerServer',
+            name='controller_server',
+            parameters=[configured_params],
+            remappings=remappings + [('cmd_vel', 'cmd_vel_nav')],
+            extra_arguments=[{'use_intra_process_comms': True}]
+        ),
+        ComposableNode(
+            package='nav2_planner',
+            plugin='nav2_planner::PlannerServer',
+            name='planner_server',
+            parameters=[configured_params],
+            remappings=remappings,
+            extra_arguments=[{'use_intra_process_comms': True}]
+        ),
+        ComposableNode(
+            package='nav2_behaviors',
+            plugin='behavior_server::BehaviorServer',
+            name='behavior_server',
+            parameters=[configured_params],
+            remappings=remappings,
+            extra_arguments=[{'use_intra_process_comms': False}] # intraprocess communication allowed only with volatile durability
+        ),
+        ComposableNode(
+            package='nav2_bt_navigator',
+            plugin='nav2_bt_navigator::BtNavigator',
+            name='bt_navigator',
+            parameters=[configured_params],
+            remappings=remappings,
+            extra_arguments=[{'use_intra_process_comms': False}] # intraprocess communication allowed only with volatile durability
+        ),
+        ComposableNode(
+            package='nav2_velocity_smoother',
+            plugin='nav2_velocity_smoother::VelocitySmoother',
+            name='velocity_smoother',
+            parameters=[configured_params],
+            remappings=remappings,
+            extra_arguments=[{'use_intra_process_comms': True}]
+        ),
+        ComposableNode(
+            package='nav2_map_server',
+            plugin='nav2_map_server::MapServer',
+            name='map_server',
+            parameters=[configured_params],
+            remappings=remappings,
+            extra_arguments=[{'use_intra_process_comms': False}] # intraprocess communication allowed only with volatile durability
+        ),
+        ComposableNode(
+            package='nav2_lifecycle_manager',
+            plugin='nav2_lifecycle_manager::LifecycleManager',
+            name='lifecycle_manager_navigation',
+            parameters=[
+                {'autostart': True, 'node_names': lifecycle_nodes}
+            ]
+        )
+    ]
 
     nav2_launch = GroupAction(
         actions=[
             # Remap the cmd_vel topic published from 'Controller server' to the diffdrive_controller
             SetRemap(src='/cmd_vel', dst='/locobot/diffdrive_controller/cmd_vel_unstamped'),
             
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource([nav2_launch_file_dir]),
-                launch_arguments={
-                    'params_file': params_file,
-                    'use_sim_time': 'True',
-                    'autostart': 'True',
-                }.items()
-            ),
-            # Launch map server
-            Node(
-                package='nav2_map_server',
-                executable='map_server',
-                name='map_server',
+                # If an existing container is not provided, start a container and load nodes into it
+            ComposableNodeContainer(
+                condition=LaunchConfigurationEquals('container', ''),
+                name='nav2_container',
+                namespace='',
+                package='rclcpp_components',
+                executable='component_container',
+                composable_node_descriptions=composable_nodes,
                 output='screen',
-                parameters=[{'yaml_filename': map_yaml_file}, {'use_sim_time': True}],
-                remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
+                parameters=[configured_params],
             ),
-            # Activate lifecycle manager for map server
-            Node(
-                package='nav2_lifecycle_manager',
-                executable='lifecycle_manager',
-                name='lifecycle_map_server',
-                output='screen',
-                parameters=[{'node_names': ['map_server']},
-                            {'autostart': True},
-                            {'use_sim_time': True}],
+
+            # If an existing container name is provided, load composable nodes into it
+            # This will block until a container with the provided name is available and nodes are loaded
+            LoadComposableNodes(
+                condition=LaunchConfigurationNotEquals('container', ''),
+                composable_node_descriptions=composable_nodes,
+                target_container=LaunchConfiguration('container'),
             ),
         ])
 
@@ -382,7 +481,8 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare("simulation"),
                                                          'launch', 'include_markers.launch.py'])),
         launch_arguments={
-            'camera_number': camera_number,
+            'camera_number': LaunchConfiguration('camera_number'),
+            'use_gazebo': 'false',
         }.items()
     ) 
 
@@ -403,7 +503,7 @@ def generate_launch_description():
     
 
 ############################################################################################################
-############################################  EVENTS HANDLER  ##########################################
+############################################  EVENTS HANDLER  ##############################################
 ############################################################################################################
 
     # NOTE: This TimerAction gives some time to the spawn entities to create the plugin for the camera in the correct namespace
@@ -422,7 +522,6 @@ def generate_launch_description():
                       nav2_launch]
     )
 
-
     return LaunchDescription([
         SetEnvironmentVariable('GAZEBO_RESOURCE_PATH', value=resources_path),
         SetEnvironmentVariable('GAZEBO_MODEL_PATH', value=models_path),
@@ -430,13 +529,15 @@ def generate_launch_description():
         base_type_launch_arg,
         external_srdf_loc_launch_arg,
         external_urdf_loc_launch_arg,
-        map_yaml_file_launch_arg,
         params_file_launch_arg,
-        camera_number_arg,
+        camera_number_launch_arg,
+        spawn_obstacle_launch_arg,
+        arg_container,
     # Simulation launch
         gazebo_simulation_launch,
         wait_spawn_camera_services,
         wait_gazebo,
+        spawn_obstacle,
     # Rviz launch
         rviz,
     ])
