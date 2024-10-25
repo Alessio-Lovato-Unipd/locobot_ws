@@ -8,7 +8,7 @@ from launch_ros.actions import Node, ComposableNodeContainer, LoadComposableNode
 from launch_ros.descriptions import ComposableNode
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.conditions import IfCondition, LaunchConfigurationEquals, LaunchConfigurationNotEquals
+from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
 
@@ -72,7 +72,7 @@ def generate_launch_description():
         package="tf2_ros",
         executable="static_transform_publisher",
         arguments = ['--x', '0.0', '--y', '0.0', '--z', '-0.63',
-                     '--roll', '0.0', '--pitch', '0.0', '--yaw', '1.57079632679', 
+                     '--roll', '0.0', '--pitch', '0.0', '--yaw', '0.0', 
                      '--frame-id', 'locobot_tag_rotated',
                      '--child-frame-id', 'locobot/base_footprint'],
         output='screen'
@@ -128,9 +128,9 @@ def generate_launch_description():
     ]
 
     # If an existing container is not provided, start a container and load nodes into it
-    image_container = ComposableNodeContainer(
+    apriltag_container = ComposableNodeContainer(
         condition=LaunchConfigurationEquals('container', ''),
-        name='image_container',
+        name='apriltag_container',
         namespace='',
         package='rclcpp_components',
         executable='component_container',
@@ -152,7 +152,7 @@ def generate_launch_description():
     ld.add_action(map_tf)
     ld.add_action(locobot_apriltag_tf)
     ld.add_action(kinectNode)
-    ld.add_action(image_container)
+    ld.add_action(apriltag_container)
     ld.add_action(load_composable_nodes)
 
     return ld

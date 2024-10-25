@@ -35,7 +35,7 @@
 'include_camera.launch.py' and 'include_markers.launch.py' are included in this launch file to include the camera and
 the markers in the simulation. The file 'navigation_3D.rviz' is used to visualize the simulation in RViz2.
 
-@param params_file: the file path to the params YAML file. (default: 'config/navigation.yaml')
+@param nav2_params_file: the file path to the params YAML file of Nav2. (default: 'config/simulation_navigation.yaml')
 @param robot_name: name of the robot (default: 'locobot')
 @param base_type: type of the base (default: 'kobuki')
 @param external_srdf_loc: the file path to the custom semantic description file that you would like to include in the Interbotix robot's semantic description. (default: '')
@@ -98,19 +98,18 @@ def load_yaml(package_name, file_path):
 def generate_launch_description():
 
     # Declare launch arguments
-    params_file = LaunchConfiguration('params_file')
     robot_name = LaunchConfiguration('robot_name')
     base_type = LaunchConfiguration('base_type')
     external_srdf_loc = LaunchConfiguration('external_srdf_loc')
     external_urdf_loc = LaunchConfiguration('external_urdf_loc')
 
     # Launch arguments' default values
-    params_file_launch_arg = DeclareLaunchArgument(
-            'params_file',
+    nav2_params_file_launch_arg = DeclareLaunchArgument(
+            'nav2_params_file',
             default_value=PathJoinSubstitution([
                 FindPackageShare('simulation'),
                 'config',
-                'navigation.yaml'
+                'simulation_navigation.yaml'
             ]),
             description='the file path to the params YAML file.'
     )
@@ -361,7 +360,7 @@ def generate_launch_description():
 
     configured_params = ParameterFile(
         RewrittenYaml(
-            source_file=LaunchConfiguration('params_file'),
+            source_file=LaunchConfiguration('nav2_params_file'),
             param_rewrites={'autostart': 'True'},
             convert_types=True,
         ),
@@ -519,7 +518,8 @@ def generate_launch_description():
     wait_gazebo = TimerAction(
         period=10.0, #Delay in seconds
         actions=[move_group_node,
-                      nav2_launch]
+                    arm_to_sleep_position,
+                    nav2_launch]
     )
 
     return LaunchDescription([
@@ -529,7 +529,7 @@ def generate_launch_description():
         base_type_launch_arg,
         external_srdf_loc_launch_arg,
         external_urdf_loc_launch_arg,
-        params_file_launch_arg,
+        nav2_params_file_launch_arg,
         camera_number_launch_arg,
         spawn_obstacle_launch_arg,
         arg_container,

@@ -1,0 +1,27 @@
+$(var robot_name):
+  rs_camera:
+    ros__parameters:
+      align_depth:
+        enable: false
+      base_frame_id: $(var robot_name)_link
+      depth_module:
+        depth_profile: '680,480,30'
+      enable_color: true
+      enable_depth: true
+      enable_infra1: false
+      enable_infra2: false
+      enable_sync: false
+      hole_filling_filter:
+        enable: false
+      initial_reset: false
+      pointcloud:
+        ordered_pc: false
+        enable: true
+      rgb_camera:
+        color_profile: '680,480,30'
+      spatial_filter:
+        enable: false
+      temporal_filter:
+        enable: false
+      tf_publish_rate: 0.0
+      wait_for_device_timeout: -1.0
