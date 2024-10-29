@@ -27,10 +27,18 @@ import rcl_interfaces.msg
 @brief Class to recognize gestures using the MediaPipe library and send the corresponding state to the robot.
 @details The gestures recognized are:
     - 'Closed_Fist': Sets the state to CLOSE_GRIPPER.
-    - 'Victory': Sets the state to OPEN_GRIPPER.
+    - 'Pointing_Up': Sets the state to OPEN_GRIPPER.
     - 'Thumb_Up': Sets the state to NAVIGATION.
     - 'Thumb_Down': Sets the state to INTERACTION.
     - 'Open_Palm': Sets the state to IDLE.
+    - 'ILoveYou': Sets the state to ABORT.
+
+The recognized gestures are sent to the simulation using a service client. The service name is given as a parameter.
+The recognized gesture is also printed in the console.
+
+@param camera_topic The topic of the camera image.
+@param service_name The name of the service to connect with. If null, the service client won't be used.
+@param minimum_score The minimum score to consider a gesture (default is 0.6). Must be between 0 and 1.
 
 @note The gesture recognizer model is loaded from the gesture_recognizer_model folder in the package and it is the 
     'HandGestureClassifier' model with float 16 quantization type. It is the default one.
@@ -43,7 +51,7 @@ class GestureRecognizer(Node):
         description = ParameterDescriptor(description='Topic of the camera image')
         self.declare_parameter('camera_topic', '/camera/image_raw', description)
         description = ParameterDescriptor(description='Name of the service to connect with')
-        self.declare_parameter('service_name', 'state_control', description)
+        self.declare_parameter('service_name', '', description)
 
         # Load the gesture recognizer model
         model_path = os.path.join(get_package_share_directory('gesture_recognition'), 'gesture_recognizer_model', 'gesture_recognizer.task')
@@ -69,10 +77,12 @@ class GestureRecognizer(Node):
         self.br = CvBridge()
 
         # Create a service client to control the simulation
-        self.client = self.create_client(ControlStates, self.get_parameter('service_name').value)
-        while not self.client.wait_for_service(timeout_sec=0.5):
-            self.get_logger().info('service not available, waiting again...')
-        self.req = ControlStates.Request()
+        self.use_client = self.get_parameter('service_name').value != ''
+        if self.use_client:
+            self.client = self.create_client(ControlStates, self.get_parameter('service_name').value)
+            while not self.client.wait_for_service(timeout_sec=0.5):
+                self.get_logger().info('service not available, waiting again...')
+            self.req = ControlStates.Request()
 
     """
     @brief Sends the state corresponding to the given gesture to the simulation.
@@ -83,6 +93,7 @@ class GestureRecognizer(Node):
         - 'Thumb_Up': Sets the state to NAVIGATION.
         - 'Thumb_Down': Sets the state to INTERACTION.
         - 'Open_Palm': Sets the state to IDLE.
+        - 'ILoveYou': Sets the state to ABORT.
     @return None
     """
     def send_state(self, gesture):
@@ -127,7 +138,8 @@ class GestureRecognizer(Node):
                 # Prevent a gesture to be sent multiple times, except for the Victory and Closed_Fist gestures that can be repeated.
                 # Note that those gesture can be repeated since if they're sent during the wrong state, they will be ignored.
                 if self.last_gesture != gesture.category_name or gesture.category_name == 'Pointing_Up' or gesture.category_name == 'Closed_Fist':
-                    self.send_state(gesture.category_name)
+                    if self.use_client:
+                        self.send_state(gesture.category_name)
                     self.last_gesture = gesture.category_name
                     rclpy.logging.get_logger('gesture_recognizer').info(f"Gesture: {gesture.category_name} with confidence {gesture.score}")
 
