@@ -1,0 +1,5 @@
+# No goal
+---
+uint8 result
+---
+uint8 current_state
