@@ -60,8 +60,8 @@ def generate_launch_description():
     map_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
-        arguments = ['--x', '-0.303', '--y', '0.373', '--z', '3.071',
-                     '--roll', '2.464', '--pitch', '-0.586', '--yaw', '-0.483', 
+        arguments = ['--x', '0.073', '--y', '0.335', '--z', '3.762',
+                     '--roll', '-2.212', '--pitch', '-0.518', '--yaw', '-2.810', 
                      '--frame-id', 'rgb_camera_link',
                      '--child-frame-id', 'map'],
         output='screen'
@@ -72,8 +72,8 @@ def generate_launch_description():
         package="tf2_ros",
         executable="static_transform_publisher",
         arguments = ['--x', '0.0', '--y', '0.0', '--z', '-0.63',
-                     '--roll', '0.0', '--pitch', '0.0', '--yaw', '0.0', 
-                     '--frame-id', 'locobot_tag_rotated',
+                     '--roll', '0.0', '--pitch', '0.0', '--yaw', '1.5707', 
+                     '--frame-id', 'locobot_tag',
                      '--child-frame-id', 'locobot/base_footprint'],
         output='screen'
     )
@@ -94,18 +94,6 @@ def generate_launch_description():
             {'point_cloud': False},
         ]
     )
-
-    # Rotate the tf of the markers
-    with open(config_file, 'r') as stream:
-        yaml_data = yaml.safe_load(stream)
-        tag_frames = yaml_data['tag_frames']
-        for tag_frame in tag_frames:
-            ld.add_action(Node(
-                package='tf2_ros',
-                executable='static_transform_publisher',
-                output='screen' ,
-                arguments=['0', '0', '0', '3.14159265359', '-1.57079632679', '0', tag_frame, tag_frame + '_rotated']
-            ))
 
     # Node composition of the image_proc node and the apriltag_ros node
     composable_nodes = [

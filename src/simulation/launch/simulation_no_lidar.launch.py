@@ -194,7 +194,8 @@ def generate_launch_description():
             'use_camera': 'true',
             'external_urdf_loc': external_urdf_loc,
             'use_gazebo_debug': 'false',
-            
+            'robot_model': 'locobot_wx200',
+            'base_type': 'kobuki'     
         }.items()
     )
 

@@ -118,30 +118,11 @@ def generate_launch_description():
         name='locobot_tag_static_tf_broadcaster',
         arguments=[
             '--x', '0.0', '--y', '0.127', '--z', '-0.493',
-            '--roll', '0.0', '--pitch', '0.0', '--yaw', '0.0',
-            '--frame-id', 'locobot_tag_rotated', '--child-frame-id', 'locobot/base_footprint'
+            '--roll', '0.0', '--pitch', '0.0', '--yaw', '1.5707',
+            '--frame-id', 'locobot_tag', '--child-frame-id', 'locobot/base_footprint'
         ],
         output='screen'
     )
-
-    # Create apriltag republisher to rotate # Configuration file
-    config_file = os.path.join(get_package_share_directory('simulation'), 'config', 'apriltag.yaml')
-
-    # Rotate the pose of the markers
-    with open(config_file, 'r') as stream:
-        yaml_data = yaml.safe_load(stream)
-        tag_frames = yaml_data['tag_frames']
-        for tag_frame in tag_frames:
-            ld.add_action(Node(
-                package='tf2_ros',
-                executable='static_transform_publisher',
-                output='screen',
-                arguments=[
-                    '--x', '0', '--y', '0', '--z', '0',
-                    '--roll', '3.14159265359', '--pitch', '-1.57079632679', '--yaw', '0',
-                    '--frame-id', tag_frame, '--child-frame-id', tag_frame + '_rotated'
-                ]
-            ))
 
     # Create event handlers to create a proper sequence of actions
     delayed_spawn = TimerAction(
