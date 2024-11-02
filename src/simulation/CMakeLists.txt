@@ -141,6 +141,7 @@ install(DIRECTORY
     urdf
     media
     behavior_tree
+    worlds
   DESTINATION share/${PROJECT_NAME}
 )
 

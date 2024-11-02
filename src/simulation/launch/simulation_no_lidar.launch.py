@@ -49,6 +49,8 @@ from the 'interbotix_xslocobot_sim', 'interbotix_xslocobot_moveit' and 'navigati
 
 import os
 import yaml
+from pathlib import Path
+
 
 from ament_index_python.packages import get_package_share_directory
 from interbotix_xs_modules.xs_common import (
@@ -63,6 +65,7 @@ from launch.actions import (
     IncludeLaunchDescription,
     GroupAction,
     SetEnvironmentVariable,
+    OpaqueFunction,
     TimerAction
 )
 from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals
@@ -83,6 +86,10 @@ from launch_ros.descriptions import ParameterFile, ComposableNode
 from nav2_common.launch import RewrittenYaml
 
 
+
+"""
+@breif Function to load a YAML file
+"""
 def load_yaml(package_name, file_path):
     package_path = get_package_share_directory(package_name)
     absolute_file_path = os.path.join(package_path, file_path)
@@ -95,6 +102,50 @@ def load_yaml(package_name, file_path):
 
 
 
+"""
+@breif Function to set the environment variables for Gazebo Simulator
+"""
+def set_env_vars(context, *args, **kwargs):
+    gz_resource_path_env_var = SetEnvironmentVariable(
+        name='GAZEBO_RESOURCE_PATH',
+        value=[
+            EnvironmentVariable('GAZEBO_RESOURCE_PATH', default_value=''),
+            ':',
+            str(Path(
+                FindPackageShare('simulation').perform(context)
+            ).resolve())
+        ]
+    )
+
+    gz_model_path_env_var = SetEnvironmentVariable(
+        name='GAZEBO_MODEL_PATH',
+        value=[
+            EnvironmentVariable('GAZEBO_MODEL_PATH', default_value=''),
+            ':',
+            str(Path(
+                FindPackageShare('simulation').perform(context)
+            ).resolve()),
+            '/models:',
+        ]
+    )
+
+    gz_media_path_env_var = SetEnvironmentVariable(
+        name='GAZEBO_MEDIA_PATH',
+        value=[
+            EnvironmentVariable('GAZEBO_MEDIA_PATH', default_value=''),
+            ':',
+            str(Path(
+                FindPackageShare('simulation').perform(context)
+            ).resolve())
+        ]
+    )
+
+    return [gz_resource_path_env_var, gz_model_path_env_var, gz_media_path_env_var]
+
+
+"""
+@brief Main function
+"""
 def generate_launch_description():
 
     # Declare launch arguments
@@ -168,21 +219,6 @@ def generate_launch_description():
 ######################################  GAZEBO CLASSIC SIMULATION  #########################################
 ############################################################################################################
 
-    # Define Gazebo classic environment variables
-    resources = os.path.join(get_package_share_directory('simulation'))
-    models = os.path.join(get_package_share_directory('simulation'), 'models')
-
-    if 'GAZEBO_RESOURCE_PATH' in os.environ:
-        resources_path =  os.environ['GAZEBO_RESOURCE_PATH'] + ':' + resources
-    else:
-        resources_path =  resources
-
-    if 'GAZEBO_MODEL_PATH' in os.environ:
-        models_path = os.environ['GAZEBO_MODEL_PATH'] + ':' + models
-    else:
-        models_path = models
-
-
     # locobot simulation launch
     gazebo_simulation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare("interbotix_xslocobot_sim"), 'launch', 'xslocobot_gz_classic.launch.py'])),
@@ -195,8 +231,9 @@ def generate_launch_description():
             'external_urdf_loc': external_urdf_loc,
             'use_gazebo_debug': 'false',
             'robot_model': 'locobot_wx200',
-            'base_type': 'kobuki'     
-        }.items()
+            'base_type': 'kobuki',
+            'use_gazebo_verbose': 'false',
+        }.items(),
     )
 
     obstacle_model_path = PathJoinSubstitution([FindPackageShare("simulation"), 
@@ -495,7 +532,7 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         name='rviz2',
-        arguments=['-d', PathJoinSubstitution([FindPackageShare("simulation"), 'rviz', 'navigation_3D.rviz']),
+        arguments=['-d', PathJoinSubstitution([FindPackageShare("simulation"), 'rviz', 'navigation.rviz']),
                    '--ros-args', '--log-level', 'warn'],
         output='screen'
     )
@@ -524,8 +561,9 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        SetEnvironmentVariable('GAZEBO_RESOURCE_PATH', value=resources_path),
-        SetEnvironmentVariable('GAZEBO_MODEL_PATH', value=models_path),
+    # Environment variables
+        OpaqueFunction(function=set_env_vars),
+    # Launch arguments
         robot_name_launch_arg,
         base_type_launch_arg,
         external_srdf_loc_launch_arg,
