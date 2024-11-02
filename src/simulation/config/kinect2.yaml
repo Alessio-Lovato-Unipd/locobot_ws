@@ -1,0 +1,28 @@
+kinect_node:
+  ros__parameters:
+    # Please note that the 'a' inserted in the serial number is only possible because
+    # of fixes in the azure_kinect_ros_driver package that delete all the non numeric components
+    # of the string. If you are using the original package, you should use the original serial number.
+    
+    sensor_sn: 'a000181401712'  # Serial number of the camera 'k01'
+    depth_enabled: false
+    rgb_point_cloud: false
+    color_enabled: true
+    color_resolution: '1080P'
+    fps: 30
+    point_cloud: false
+    camera_namespace: 'k01' # 'k01' or 'k02'
+    required: true
+
+
+camera_tf:
+  ros__parameters:
+    x: -2.153
+    y: 3.230
+    z: -2.528
+    roll: -0.984
+    pitch: 0.413
+    yaw: 1.246
+    # Note: In the launch file a prefix corresponding to the camera_namespace +'/' is added to the frame_id
+    frame_id: 'camera_base'
+    child_frame_id: 'k02/camera_base'

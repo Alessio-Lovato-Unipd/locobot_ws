@@ -1,19 +1,3 @@
-"""
-@file remote.launch.py
-
-@brief This file is used to launch the simulation environment with the Azure Kinect camera and the apriltag node.
-
-@details The launch file will start the Azure Kinect ROS driver, the image_proc node, the apriltag node, and the RViz2 node. The apriltag node will detect the apriltags in the camera feed and publish the pose of the detected tags.
-The RViz2 node will display the camera feed and the detected apriltags. If the 'only_camera' argument is set to 'true', only the camera and apriltag node will be launched.
-
-@note The apriltag node is a composable node that is loaded into a container. The container is created if the 'container' argument is not set. If the 'container' argument is set, the apriltag node is loaded into the existing container.
-
-@param container: Name of an existing node container to load launched nodes into. If unset, a new container will be created.
-@param only_camera: If set to 'true', only the camera and apriltag node will be launched.
-@param apriltag_config_file: Full path to the apriltag configuration file to use.
-@param kinect_config_file: Full path to the kinect configuration file to use.
-
-"""
 
 import os
 import yaml
@@ -24,9 +8,8 @@ from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node, ComposableNodeContainer, LoadComposableNodes
 from launch_ros.descriptions import ComposableNode
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
 def load_yaml(context, *args, **kwargs):
@@ -42,14 +25,14 @@ def setup_nodes(context, *args, **kwargs):
     kinect_params = load_yaml(context)
     camera_namespace = kinect_params['kinect_node']['ros__parameters']['camera_namespace']
 
-    # Extract map_tf parameters
-    map_tf_params = kinect_params.get('map_tf', {}).get('ros__parameters', {})
-    map_tf_args = []
+    # Extract camera_tf parameters
+    camera_tf_params = kinect_params.get('camera_tf', {}).get('ros__parameters', {})
+    camera_tf_args = []
     for param in ['x', 'y', 'z', 'roll', 'pitch', 'yaw']:
-        map_tf_args.extend([f'--{param}', str(map_tf_params.get(param, '0.0'))])
-    map_tf_args.extend([
-        '--frame-id', camera_namespace + '/' + map_tf_params.get('frame_id', 'camera_link'),
-        '--child-frame-id', map_tf_params.get('child_frame_id', 'map')
+        camera_tf_args.extend([f'--{param}', str(camera_tf_params.get(param, '0.0'))])
+    camera_tf_args.extend([
+        '--frame-id', camera_namespace + '/' + camera_tf_params.get('frame_id', 'camera_link'),
+        '--child-frame-id', camera_tf_params.get('child_frame_id', 'second_kinect_link')
     ])
 
     # Topics
@@ -57,35 +40,12 @@ def setup_nodes(context, *args, **kwargs):
     info_topic = 'rgb/camera_info'
     image_rect_topic = 'rgb/image_rect'
 
-    # RViz2 node
-    rviz = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        arguments=['-d', PathJoinSubstitution([FindPackageShare("simulation"), 'rviz', 'navigation.rviz']),
-                   '--ros-args', '--log-level', 'warn'],
-        parameters=[{'use_sim_time': True}],
-        output='screen'
-    )
-
-    # Static transform publisher for the map frame
-    map_tf = Node(
+    # Static transform publisher for the camera frame
+    camera_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
-        name="map_tf",
-        arguments=map_tf_args,
-        output='screen'
-    )
-
-    # Node to publish a static tf to link the marker to the locobot base
-    locobot_apriltag_tf = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="locobot_tag_static_tf_broadcaster",
-        arguments = ['--x', '0.0', '--y', '0.0', '--z', '-0.63',
-                     '--roll', '0.0', '--pitch', '0.0', '--yaw', '1.5707', 
-                     '--frame-id', 'locobot_tag',
-                     '--child-frame-id', 'locobot/base_footprint'],
+        name="camera_tf",
+        arguments=camera_tf_args,
         output='screen'
     )
 
@@ -139,9 +99,7 @@ def setup_nodes(context, *args, **kwargs):
     )
 
     return [
-        rviz,
-        map_tf,
-        locobot_apriltag_tf,
+        camera_tf,
         kinectNode,
         apriltag_container,
         load_composable_nodes
@@ -160,12 +118,6 @@ def generate_launch_description():
         )
     )
 
-    camera_number_arg = DeclareLaunchArgument(
-        name='camera_number', default_value='1',
-        choices=['1', '2'],
-        description='Select the number of cameras to launch'
-    )
-
     apriltag_config_file = DeclareLaunchArgument(
         name='apriltag_config_file',
         default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'config', 'apriltag.yaml']),
@@ -174,20 +126,13 @@ def generate_launch_description():
 
     kinect_config_file = DeclareLaunchArgument(
         name='kinect_config_file',
-        default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'config', 'kinect.yaml']),
+        default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'config', 'kinect2.yaml']),
         description='Full path to the kinect configuration file to use'
     )
 
-    second_camera = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare("simulation"), 'launch', 'second_kinect.launch.py'])),
-        condition=LaunchConfigurationEquals('camera_number', '2')
-    )
-
     ld.add_action(arg_container)
-    ld.add_action(camera_number_arg)
     ld.add_action(apriltag_config_file)
     ld.add_action(kinect_config_file)
     ld.add_action(OpaqueFunction(function=setup_nodes))
-    ld.add_action(second_camera)
 
     return ld
