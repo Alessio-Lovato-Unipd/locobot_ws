@@ -5,7 +5,7 @@ $(var robot_name):
         enable: false
       base_frame_id: $(var robot_name)_link
       depth_module:
-        depth_profile: '680,480,30'
+        depth_profile: '848,480,30'
       enable_color: true
       enable_depth: true
       enable_infra1: false
