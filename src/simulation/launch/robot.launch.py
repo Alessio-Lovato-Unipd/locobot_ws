@@ -158,6 +158,13 @@ def generate_launch_description():
         description='the file path to the Realsense camera configuration file.'
     )
 
+    controller_arg = DeclareLaunchArgument(
+        name='controller',
+        default_value='ps3',
+        choices=['ps3', 'key'],
+        description='the controller to use for teleoperation. (ps3 or key)',
+    )
+
 
 ############################################################################################################
 ##############################################  MOVEIT2  ###################################################
@@ -354,6 +361,47 @@ def generate_launch_description():
         ]
     )
 
+
+   
+    # Include launch file from teleop_twist_joy package
+    teleop_twist_joy_launch = GroupAction(
+        actions=[
+            # Remap the cmd_vel topic
+            SetRemap(src='/cmd_vel', dst='/locobot/commands/velocity'),
+
+            # Include launch file from teleop_twist_joy package
+            IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(
+                        PathJoinSubstitution(
+                            [FindPackageShare('teleop_twist_joy'), 'launch', 'teleop-launch.py']),
+                    ),
+                    launch_arguments={
+                        'joy_config': 'ps3',
+                    }.items(),
+                    condition=LaunchConfigurationEquals('controller', 'ps3')
+            ),
+
+            Node(
+                package='teleop_twist_keyboard',
+                executable='teleop_twist_keyboard',
+                name='teleop_twist_keyboard',
+                output='screen',
+                remappings=[('/cmd_vel', '/locobot/commands/velocity')],
+                condition=LaunchConfigurationEquals('controller', 'key')
+            )
+        ]
+    )
+
+    # Include launch file from gesture_recognition package
+    gesture_recognition_launch = ncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(
+                        PathJoinSubstitution(
+                            [FindPackageShare('gesture_recognition'), 'launch', 'gesture_recognizer.launch.py']),
+                    )
+            )
+
+
+
 ############################################################################################################
 ############################################  EVENTS HANDLER  ##############################################
 ############################################################################################################
@@ -366,6 +414,13 @@ def generate_launch_description():
         ]
     )
 
+    more_delayed_items = TimerAction(
+        period=10.0, #Delay in seconds
+        actions=[teleop_twist_joy_launch,
+                 gesture_recognition_launch
+        ]
+    )
+
     return LaunchDescription([
         robot_name_launch_arg,
         base_type_launch_arg,
@@ -374,7 +429,9 @@ def generate_launch_description():
         nav2_params_file_launch_arg,
         rs_camera_param_launch_arg,
         arg_container,
+        controller_arg,
     # Robot launch
         ros_control_locobot,
-        delayed_items
+        delayed_items,
+        more_delayed_items
     ])
