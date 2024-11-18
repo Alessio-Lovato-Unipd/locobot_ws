@@ -9,7 +9,7 @@
     <include>
       <uri>model://ground_plane</uri>
     </include>
-    <!-- Trossen Robotics Offices -->
+    <!-- Big Arena -->
     <include>
       <uri>model://big_arena</uri>
       <pose>0 -0.25 0 0 0 1.5707</pose>

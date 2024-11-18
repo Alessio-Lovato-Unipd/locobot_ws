@@ -9,10 +9,14 @@
     <include>
       <uri>model://ground_plane</uri>
     </include>
-    <!-- Small Arena -->
+    <!-- Big Arena -->
     <include>
-      <uri>model://small_arena</uri>
-      <pose>0 0 0 0 0 1.5707</pose>
+      <uri>model://big_arena</uri>
+      <pose>1.5 -0.25 0 0 0 1.5707</pose>
+    </include>
+    <include>
+      <uri>model://obstacle</uri>
+      <pose>2 0 0 0 0 0</pose>
     </include>
   </world>
 </sdf>
