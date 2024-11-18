@@ -12,20 +12,14 @@
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 
-  <!-- Navigation and slam dependencies -->
-  <depend>nav2_bringup</depend>
-  <depend>slam_toolbox</depend>
-  <depend>nav2_msgs</depend>
-  <depend>nav2_util</depend>
-  <depend>geometry_msgs</depend>
-  <depend>gazebo_ros</depend>
-  <exec_depend>spatio_temporal_voxel_layer</exec_depend>
-
-
   <!-- Rclcpp dependencies -->
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
   <depend>rclcpp_components</depend>
+  <depend>tf2_ros</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav2_msgs</depend>
 
   <!-- Moveit dependencies -->
   <depend>moveit_core</depend>
@@ -35,10 +29,9 @@
   <!-- Interbotix dependencies -->
   <depend>interbotix_xs_modules</depend>
 
-  <!-- Apriltag detection dependencies -->
-  <depend>apriltag_ros</depend>
-  <depend>image_proc</depend>
-  <depend>tf2_ros</depend>
+  <!-- Joystick dependencies -->
+  <depend>teleop-twist-joy</depend>
+  <depend>teleop_twist_keyboard</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

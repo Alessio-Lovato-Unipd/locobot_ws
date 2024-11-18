@@ -292,122 +292,6 @@ def generate_launch_description():
     )
 
 ############################################################################################################
-############################################  NAVIGATION2  #################################################
-############################################################################################################
-
-    configured_params = ParameterFile(
-        RewrittenYaml(
-            source_file=LaunchConfiguration('nav2_params_file'),
-            param_rewrites={'autostart': 'True',
-                            'use_sim_time': 'False'}, # Force use_sim_time to False
-            convert_types=True,
-        ),
-        allow_substs=True,
-    )
-
-    # Map fully qualified names to relative ones so the node's namespace can be prepended.
-    # In case of the transforms (tf), currently, there doesn't seem to be a better alternative
-    # https://github.com/ros/geometry2/issues/32
-    # https://github.com/ros/robot_state_publisher/pull/30
-    # TODO(orduno) Substitute with `PushNodeRemapping`
-    #              https://github.com/ros2/launch_ros/issues/56
-    remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
-
-    lifecycle_nodes = [
-        'controller_server',
-        'planner_server',
-        'behavior_server',
-        'bt_navigator',
-        'velocity_smoother',
-        'map_server',
-    ]
-
-    composable_nodes = [
-        ComposableNode(
-            package='nav2_controller',
-            plugin='nav2_controller::ControllerServer',
-            name='controller_server',
-            parameters=[configured_params],
-            remappings=remappings + [('cmd_vel', 'cmd_vel_nav')],
-            extra_arguments=[{'use_intra_process_comms': True}]
-        ),
-        ComposableNode(
-            package='nav2_planner',
-            plugin='nav2_planner::PlannerServer',
-            name='planner_server',
-            parameters=[configured_params],
-            remappings=remappings,
-            extra_arguments=[{'use_intra_process_comms': True}]
-        ),
-        ComposableNode(
-            package='nav2_behaviors',
-            plugin='behavior_server::BehaviorServer',
-            name='behavior_server',
-            parameters=[configured_params],
-            remappings=remappings,
-            extra_arguments=[{'use_intra_process_comms': False}] # intraprocess communication allowed only with volatile durability
-        ),
-        ComposableNode(
-            package='nav2_bt_navigator',
-            plugin='nav2_bt_navigator::BtNavigator',
-            name='bt_navigator',
-            parameters=[configured_params],
-            remappings=remappings,
-            extra_arguments=[{'use_intra_process_comms': False}] # intraprocess communication allowed only with volatile durability
-        ),
-        ComposableNode(
-            package='nav2_velocity_smoother',
-            plugin='nav2_velocity_smoother::VelocitySmoother',
-            name='velocity_smoother',
-            parameters=[configured_params],
-            remappings=remappings,
-            extra_arguments=[{'use_intra_process_comms': True}]
-        ),
-        ComposableNode(
-            package='nav2_map_server',
-            plugin='nav2_map_server::MapServer',
-            name='map_server',
-            parameters=[configured_params],
-            remappings=remappings,
-            extra_arguments=[{'use_intra_process_comms': False}] # intraprocess communication allowed only with volatile durability
-        ),
-        ComposableNode(
-            package='nav2_lifecycle_manager',
-            plugin='nav2_lifecycle_manager::LifecycleManager',
-            name='lifecycle_manager_navigation',
-            parameters=[
-                {'autostart': True, 'node_names': lifecycle_nodes}
-            ]
-        )
-    ]
-
-    nav2_launch = GroupAction(
-        actions=[
-            # Remap the cmd_vel topic published from 'Controller server' to the diffdrive_controller
-            SetRemap(src='/cmd_vel', dst='/locobot/commands/velocity'),
-            
-                # If an existing container is not provided, start a container and load nodes into it
-            ComposableNodeContainer(
-                condition=LaunchConfigurationEquals('container', ''),
-                name='nav2_container',
-                namespace='',
-                package='rclcpp_components',
-                executable='component_container',
-                composable_node_descriptions=composable_nodes,
-                output='screen',
-                parameters=[configured_params],
-            ),
-
-            # If an existing container name is provided, load composable nodes into it
-            # This will block until a container with the provided name is available and nodes are loaded
-            LoadComposableNodes(
-                condition=LaunchConfigurationNotEquals('container', ''),
-                composable_node_descriptions=composable_nodes,
-                target_container=LaunchConfiguration('container'),
-            ),
-        ])
-
-############################################################################################################
 ##########################################  LOCOBOT CONTROL  ###############################################
 ############################################################################################################
 
@@ -448,13 +332,18 @@ def generate_launch_description():
     )
   
     # Create the container for components
-    container = GroupAction(
+    rs_camera = GroupAction(
         actions=[
             # Container name not provided, using navigation container
-            LoadComposableNodes(
+            ComposableNodeContainer(
                 condition=LaunchConfigurationEquals('container', ''),
+                name='rs_container',
+                namespace='',
+                package='rclcpp_components',
+                executable='component_container',
                 composable_node_descriptions=[realsense_node],
-                target_container='nav2_container',
+                output='screen',
+                parameters=[configured_params],
             ),
             # Container name provided, using provided container
             LoadComposableNodes(
@@ -472,8 +361,7 @@ def generate_launch_description():
     # Delayed items to have better control over the order of execution
     delayed_items = TimerAction(
         period=5.0, #Delay in seconds
-        actions=[nav2_launch,
-                container,
+        actions=[rs_camera,
                 move_group_node
         ]
     )

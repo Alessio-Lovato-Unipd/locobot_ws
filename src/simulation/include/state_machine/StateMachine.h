@@ -13,10 +13,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
-#include "std_msgs/msg/u_int8.hpp"
 #include "std_msgs/msg/string.hpp"
-#include "geometry_msgs/msg/transform_stamped.hpp"
-#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 
@@ -41,10 +38,6 @@
  */
 enum class States : uint8_t {
     IDLE,                   // Waits for a new command
-    SECURE_ARM,             // Secure the arm to avoid collision in navigation
-    WAIT_ARM_SECURING,      // Wait for the arm to be secured
-    SEND_NAV_GOAL,          // Send the navigation goal to the navigation stack
-    WAIT_NAVIGATION,        // Wait for the navigation to reach the goal
     WAIT_ARM_EXTENDING,     // Wait for the arm to be extended
     ARM_EXTENDED,           // Open the gripper to release the object upon command
     WAIT_GRIPPER,           // Wait for the gripper to open
@@ -150,23 +143,11 @@ private:
         switch (request->state) {
             case simulation_interfaces::srv::ControlStates::Request::IDLE:
                     requestedInteraction_ = false;
-                    requestedNavigation_ = false;
                     response->successful_request = true;
-                break;
-
-            case simulation_interfaces::srv::ControlStates::Request::NAVIGATION:
-                if (state_ == States::IDLE) {
-                    requestedNavigation_ = true;
-                    requestedInteraction_ = false;
-                    response->successful_request = true;
-                } else {
-                    response->successful_request = false;
-                }
                 break;
 
             case simulation_interfaces::srv::ControlStates::Request::INTERACTION:
                 if (state_ == States::IDLE) {
-                    requestedNavigation_ = false;
                     requestedInteraction_ = true;
                     response->successful_request = true;
                 } else {
@@ -195,7 +176,6 @@ private:
             case simulation_interfaces::srv::ControlStates::Request::ABORT:
                 requestedAbort_ = true;
                 requestedInteraction_ = false;
-                requestedNavigation_ = false;
                 response->successful_request = true;
                 break;
         
@@ -213,24 +193,15 @@ private:
     Result result_{Result::INITIALIZED}; // Result of the machine
     std::string errorMsg_{""}; // Error message
     bool requestedAbort_{false}; // Request to abort the machine
-    bool requestedNavigation_{false}; // Request to navigate to the human
     bool requestedInteraction_{false}; // Request to interact with the human
     GripperState requestedGripperMovement_{GripperState::UNKNOWN}; // Requested gripper movement
     std::mutex request_mutex_; // Mutex to protect the state machine
-    std::string robot_frame_; // Frame of the robot tag
-    std::string map_frame_; // Frame of the map tag
-    std::string human_frame_; // Frame of the human tag
-    bool follow_human_; // Follow the human or not after the first position
     int sleep_time_; // Sleep time in milliseconds for the state machine cycle
-    geometry_msgs::msg::PoseStamped last_human_pose_; // Pose of the human
 
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};// Listener to the tf
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_{nullptr};// Buffer for the tf
-    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_updater_; // Publisher to update the navigation goal
-    //rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr state_publisher_; // Publisher to update the state of the machine
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_publisher_;
     std::thread machine_thread_; // Thread to operate the state machine
-    std::thread arm_thread_; // Thread that operates the gripper and arm
 
     // Functions
     void machineError(const std::string &msg); // Set the machine in error state and save the error message
@@ -249,40 +220,6 @@ private:
      * @return True if the error can be cleared, false otherwise.
      */
     bool clear_error();
-
-    /**
-     * @brief Function to determine if the TF of the human and robot are available.
-     * 
-     * @return True if the TF of the human and robot are available, false otherwise.
-     */
-    bool tf_available();
-
-    /**
-     * @brief Function to determine if the requested TF is available.
-     * 
-     * @param to_frame The frame to look to.
-     * @param from_frame The frame to look from.
-     * 
-     * @return True if the requested TF is available, false otherwise.
-     */
-    bool lookup_tf(const std::string &to_frame, const std::string &from_frame);
-
-    /**
-     * @brief Function to calculate the planar Euclidean distance between the robot and the human.
-     * 
-     * @note Map tag frame is used as the origin of the map.
-     * 
-     * @return The absolute distance between the robot and the human in meters. If an error 
-     * occurs, the function returns -1.0.
-     */
-    double distance_to_human() const;
-
-    /**
-     * @brief Obtains the pose of the human relative to the map frame.
-     * 
-     * @return The pose of the human relative to the map frame.
-     */
-    geometry_msgs::msg::PoseStamped GetHumanPose();
 
     /**
      * @brief Convert the state enum to a string.
