@@ -40,54 +40,22 @@ def load_yaml(context, *args, **kwargs):
 def setup_nodes(context, *args, **kwargs):
     # Load the kinect configuration file
     kinect_params = load_yaml(context)
-    camera_namespace = kinect_params['kinect_node']['ros__parameters']['camera_namespace']
-
-    # Extract map_tf parameters
-    map_tf_params = kinect_params.get('map_tf', {}).get('ros__parameters', {})
-    map_tf_args = []
-    for param in ['x', 'y', 'z', 'roll', 'pitch', 'yaw']:
-        map_tf_args.extend([f'--{param}', str(map_tf_params.get(param, '0.0'))])
-    map_tf_args.extend([
-        '--frame-id', camera_namespace + '/' + map_tf_params.get('frame_id', 'camera_link'),
-        '--child-frame-id', map_tf_params.get('child_frame_id', 'map')
-    ])
+    camera_namespace = "k02"
+    kinect_node_params = {
+        'sensor_sn': 'a000071601712',  # Serial number of the camera 'k02'
+        'depth_enabled': True,  # If set to false, the depth frame is rotated wrongly
+        'rgb_point_cloud': False,
+        'color_enabled': True,
+        'color_resolution': '1080P',
+        'fps': 30,
+        'point_cloud': False,
+        'required': True
+    }
 
     # Topics
     image_raw_topic = 'rgb/image_raw'
     info_topic = 'rgb/camera_info'
     image_rect_topic = 'rgb/image_rect'
-
-    # RViz2 node
-    rviz = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        arguments=['-d', PathJoinSubstitution([FindPackageShare("simulation"), 'rviz', 'navigation.rviz']),
-                   '--ros-args', '--log-level', 'warn'],
-        parameters=[{'use_sim_time': True}],
-        output='screen'
-    )
-
-    # Static transform publisher for the map frame
-    map_tf = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="map_tf",
-        arguments=map_tf_args,
-        output='screen'
-    )
-
-    # Node to publish a static tf to link the marker to the locobot base
-    locobot_apriltag_tf = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="locobot_tag_static_tf_broadcaster",
-        arguments = ['--x', '0.0', '--y', '0.0', '--z', '-0.63',
-                     '--roll', '0.0', '--pitch', '0.0', '--yaw', '1.5707', 
-                     '--frame-id', 'locobot_tag',
-                     '--child-frame-id', 'locobot/base_footprint'],
-        output='screen'
-    )
 
     # Azure Kinect ROS driver 
     kinectNode = Node(
@@ -96,8 +64,8 @@ def setup_nodes(context, *args, **kwargs):
         output='screen',
         name='kinect_node',
         namespace=camera_namespace,
-        parameters=[kinect_params['kinect_node']['ros__parameters'],
-                    {'tf_prefix': camera_namespace + '/'}],
+        parameters=[kinect_node_params,
+                    {'tf_prefix': camera_namespace + '_'}],
     )
 
     # Node composition of the image_proc node and the apriltag_ros node
@@ -105,9 +73,16 @@ def setup_nodes(context, *args, **kwargs):
         ComposableNode(
             package='image_proc',
             plugin='image_proc::RectifyNode',
+            namespace = camera_namespace + '/rgb',
             name='rectify_rgb_node',
-            namespace=camera_namespace + '/rgb',
-            remappings=[('image', 'image_raw')]
+            remappings=[
+                ('image', 'image_raw'),
+                ('camera_info', 'camera_info'),
+                ('image_rect', 'image_rect'),
+                ('image_rect/compressed', 'image_rect/compressed'),
+                ('image_rect/compressedDepth', 'image_rect/compressedDepth'),
+                ('image_rect/theora', 'image_rect/theora'),
+            ],
         ),
         ComposableNode(
             name=LaunchConfiguration('container'),
@@ -118,6 +93,18 @@ def setup_nodes(context, *args, **kwargs):
             remappings=[('image', 'image_raw')], #TODO: Change to image_rect when the rectification is working
         )
     ]
+
+    # Node to publish a static tf to link the marker to the locobot base
+    locobot_apriltag_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="locobot_tag_static_tf_broadcaster",
+        arguments = ['--x', '0.0', '--y', '0.0', '--z', '-0.70',
+                     '--roll', '0.0', '--pitch', '0.0', '--yaw', '1.5707', 
+                     '--frame-id', 'locobot_tag',
+                     '--child-frame-id', 'locobot/base_footprint'],
+        output='screen'
+    )
 
     # If an existing container is not provided, start a container and load nodes into it
     apriltag_container = ComposableNodeContainer(
@@ -138,9 +125,19 @@ def setup_nodes(context, *args, **kwargs):
         target_container=LaunchConfiguration('container'),
     )
 
+    # RViz2 node
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', PathJoinSubstitution([FindPackageShare("simulation"), 'rviz', 'navigation.rviz']),
+                   '--ros-args', '--log-level', 'warn'],
+        parameters=[{'use_sim_time': True}],
+        output='screen'
+    )
+
     return [
         rviz,
-        map_tf,
         locobot_apriltag_tf,
         kinectNode,
         apriltag_container,

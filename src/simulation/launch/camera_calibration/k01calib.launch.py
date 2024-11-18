@@ -56,8 +56,8 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(
-                        get_package_share_directory('framework_launch'),
-                        'launch/k4a.launch.py'
+                        get_package_share_directory('simulation'),
+                        'launch/camera_calibration/k4a.launch.py'
                     )
                 ),
                 launch_arguments={

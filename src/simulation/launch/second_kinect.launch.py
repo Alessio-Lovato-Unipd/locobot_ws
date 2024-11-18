@@ -5,12 +5,12 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 
 from launch_ros.substitutions import FindPackageShare
-from launch_ros.actions import Node, ComposableNodeContainer, LoadComposableNodes
+from launch_ros.actions import Node, ComposableNodeContainer, LoadComposableNodes, PushRosNamespace
 from launch_ros.descriptions import ComposableNode
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, TextSubstitution
 
 def load_yaml(context, *args, **kwargs):
     absolute_file_path = LaunchConfiguration('kinect_config_file').perform(context)
@@ -23,31 +23,22 @@ def load_yaml(context, *args, **kwargs):
 def setup_nodes(context, *args, **kwargs):
     # Load the kinect configuration file
     kinect_params = load_yaml(context)
-    camera_namespace = kinect_params['kinect_node']['ros__parameters']['camera_namespace']
-
-    # Extract camera_tf parameters
-    camera_tf_params = kinect_params.get('camera_tf', {}).get('ros__parameters', {})
-    camera_tf_args = []
-    for param in ['x', 'y', 'z', 'roll', 'pitch', 'yaw']:
-        camera_tf_args.extend([f'--{param}', str(camera_tf_params.get(param, '0.0'))])
-    camera_tf_args.extend([
-        '--frame-id', camera_namespace + '/' + camera_tf_params.get('frame_id', 'camera_link'),
-        '--child-frame-id', camera_tf_params.get('child_frame_id', 'second_kinect_link')
-    ])
+    camera_namespace = "k01"
+    kinect_node_params = {
+        'sensor_sn': 'a000181401712',  # Serial number of the camera 'k02'
+        'depth_enabled': True,  # If set to false, the depth frame is rotated wrongly
+        'rgb_point_cloud': False,
+        'color_enabled': True,
+        'color_resolution': '1080P',
+        'fps': 30,
+        'point_cloud': False,
+        'required': True
+    }
 
     # Topics
     image_raw_topic = 'rgb/image_raw'
     info_topic = 'rgb/camera_info'
     image_rect_topic = 'rgb/image_rect'
-
-    # Static transform publisher for the camera frame
-    camera_tf = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="camera_tf",
-        arguments=camera_tf_args,
-        output='screen'
-    )
 
     # Azure Kinect ROS driver 
     kinectNode = Node(
@@ -56,8 +47,8 @@ def setup_nodes(context, *args, **kwargs):
         output='screen',
         name='kinect_node',
         namespace=camera_namespace,
-        parameters=[kinect_params['kinect_node']['ros__parameters'],
-                    {'tf_prefix': camera_namespace + '/'}],
+        parameters=[kinect_node_params,
+                    {'tf_prefix': camera_namespace + '_'}],
     )
 
     # Node composition of the image_proc node and the apriltag_ros node
@@ -65,9 +56,16 @@ def setup_nodes(context, *args, **kwargs):
         ComposableNode(
             package='image_proc',
             plugin='image_proc::RectifyNode',
+            namespace = camera_namespace + '/rgb',
             name='rectify_rgb_node',
-            namespace=camera_namespace + '/rgb',
-            remappings=[('image', 'image_raw')]
+            remappings=[
+                ('image', 'image_raw'),
+                ('camera_info', 'camera_info'),
+                ('image_rect', 'image_rect'),
+                ('image_rect/compressed', 'image_rect/compressed'),
+                ('image_rect/compressedDepth', 'image_rect/compressedDepth'),
+                ('image_rect/theora', 'image_rect/theora'),
+            ],
         ),
         ComposableNode(
             name=LaunchConfiguration('container'),
@@ -99,7 +97,6 @@ def setup_nodes(context, *args, **kwargs):
     )
 
     return [
-        camera_tf,
         kinectNode,
         apriltag_container,
         load_composable_nodes
