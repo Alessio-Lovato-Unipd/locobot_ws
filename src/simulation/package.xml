@@ -30,8 +30,7 @@
   <depend>interbotix_xs_modules</depend>
 
   <!-- Joystick dependencies -->
-  <depend>teleop-twist-joy</depend>
-  <depend>teleop_twist_keyboard</depend>
+  <depend>joystick</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

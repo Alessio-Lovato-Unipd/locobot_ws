@@ -100,43 +100,6 @@ def load_yaml(package_name, file_path):
 
 def generate_launch_description():
 
-    # Declare launch arguments
-    robot_name = LaunchConfiguration('robot_name')
-    base_type = LaunchConfiguration('base_type')
-    external_srdf_loc = LaunchConfiguration('external_srdf_loc')
-    external_urdf_loc = LaunchConfiguration('external_urdf_loc')
-
-    nav2_params_file_launch_arg = DeclareLaunchArgument(
-            name='nav2_params_file',
-            default_value=PathJoinSubstitution([
-                FindPackageShare('simulation'),
-                'config',
-                'robot_navigation.yaml'
-            ]),
-            description='the file path to the params YAML file.'
-    )
-
-    robot_name_launch_arg = DeclareLaunchArgument(
-            name='robot_name',
-            default_value='locobot',
-            description='name of the robot (could be anything but defaults to `locobot`).',
-    )
-
-    base_type_launch_arg = DeclareLaunchArgument(
-            name='base_type',
-            default_value='kobuki',
-            description='type of the base (could be `kobuki` or `create3`).',
-    )
-    
-    external_srdf_loc_launch_arg = DeclareLaunchArgument(
-            name='external_srdf_loc',
-            default_value='',
-            description=(
-                'the file path to the custom semantic description file that you would like to '
-                "include in the Interbotix robot's semantic description."
-            ),
-    )
-
     external_urdf_loc_launch_arg = DeclareLaunchArgument(
             name='external_urdf_loc',
             default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'urdf', 'locobot_tag.urdf.xacro']),
@@ -162,7 +125,7 @@ def generate_launch_description():
         name='controller',
         default_value='ps3',
         choices=['ps3', 'key'],
-        description='the controller to use for teleoperation. (ps3 or key)',
+        description="Choose between ps3 controller (ps3) or keyboard (key) to control the movements. Default 'ps3'."
     )
 
 
@@ -314,6 +277,9 @@ def generate_launch_description():
                     'use_base': 'true',
                     'hardware_type': 'actual',
                     'robot_model': 'locobot_wx200',
+                    'base_type': 'kobuki',
+                    'robot_name': 'locobot',
+                    'external_srdf_loc': '',''
                     'use_camera': 'false',
                 }.items()
     )
@@ -337,6 +303,19 @@ def generate_launch_description():
         parameters=[realsense_params],
         extra_arguments=[{'use_intra_process_comms': True}],
     )
+
+    state_machine = Node(
+        package='simulation',
+        executable='state_machine_action_server',
+        output='screen',
+       # namespace='locobot',
+        # Remapping is mandatory due to the namespace
+        remappings=[
+            ('robot_description', '/locobot/robot_description'),
+            ('robot_description_semantic', '/locobot/robot_description_semantic')
+        ]
+    )
+
   
     # Create the container for components
     rs_camera = GroupAction(
@@ -350,7 +329,6 @@ def generate_launch_description():
                 executable='component_container',
                 composable_node_descriptions=[realsense_node],
                 output='screen',
-                parameters=[configured_params],
             ),
             # Container name provided, using provided container
             LoadComposableNodes(
@@ -363,42 +341,20 @@ def generate_launch_description():
 
 
    
-    # Include launch file from teleop_twist_joy package
-    teleop_twist_joy_launch = GroupAction(
-        actions=[
-            # Remap the cmd_vel topic
-            SetRemap(src='/cmd_vel', dst='/locobot/commands/velocity'),
-
-            # Include launch file from teleop_twist_joy package
-            IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(
-                        PathJoinSubstitution(
-                            [FindPackageShare('teleop_twist_joy'), 'launch', 'teleop-launch.py']),
-                    ),
-                    launch_arguments={
-                        'joy_config': 'ps3',
-                    }.items(),
-                    condition=LaunchConfigurationEquals('controller', 'ps3')
-            ),
-
-            Node(
-                package='teleop_twist_keyboard',
-                executable='teleop_twist_keyboard',
-                name='teleop_twist_keyboard',
-                output='screen',
-                remappings=[('/cmd_vel', '/locobot/commands/velocity')],
-                condition=LaunchConfigurationEquals('controller', 'key')
-            )
-        ]
-    )
-
     # Include launch file from gesture_recognition package
-    gesture_recognition_launch = ncludeLaunchDescription(
+    gesture_recognition_launch = IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(
                         PathJoinSubstitution(
                             [FindPackageShare('gesture_recognition'), 'launch', 'gesture_recognizer.launch.py']),
                     )
             )
+
+    joystick_launch = IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(
+                        PathJoinSubstitution(
+                            [FindPackageShare('joystick'), 'launch', 'joystick_PS3.launch.py.launch.py']),
+                    )
+            )      
 
 
 
@@ -416,22 +372,19 @@ def generate_launch_description():
 
     more_delayed_items = TimerAction(
         period=10.0, #Delay in seconds
-        actions=[teleop_twist_joy_launch,
-                 gesture_recognition_launch
+        actions=[gesture_recognition_launch,
+                joystick_launch
         ]
     )
 
     return LaunchDescription([
-        robot_name_launch_arg,
-        base_type_launch_arg,
-        external_srdf_loc_launch_arg,
         external_urdf_loc_launch_arg,
-        nav2_params_file_launch_arg,
         rs_camera_param_launch_arg,
         arg_container,
         controller_arg,
     # Robot launch
         ros_control_locobot,
+        state_machine,
         delayed_items,
         more_delayed_items
     ])

@@ -16,8 +16,7 @@ find_package(tf2_ros REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
-find_package(teleop_twist_keyboard REQUIRED)
-find_package(teleop_twisy_joy REQUIRED)
+find_package(joystick REQUIRED)
 find_package(simulation_interfaces REQUIRED)
 
 #moveit dependencies
@@ -56,6 +55,7 @@ ament_target_dependencies(action_server
                               "rclcpp_action"
                               "rclcpp_components"
                               "geometry_msgs"
+                              "nav2_msgs"
                               "moveit_core"
                               "moveit_ros_planning_interface"
                               "moveit_msgs"

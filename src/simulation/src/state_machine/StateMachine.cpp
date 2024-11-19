@@ -138,6 +138,20 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
 }
 
 
+StateMachine::~StateMachine() {
+    // Stop the arm
+    StopArm();
+    // Cancel the navigation goal
+    cancelNavigationGoal();
+    // Set the result to completed
+    result_ = Result::SUCCESS;
+    //wait the thread to finish
+    if (machine_thread_.joinable()) {
+        machine_thread_.join();
+    }
+}
+
+
 void StateMachine::spinMachine() {
     // Initialize the feedback message
     States last_status = state_;
@@ -168,7 +182,6 @@ bool StateMachine::clear_error() {
 
     errorMsg_ = "";
     std::unique_lock<std::mutex> lock(request_mutex_);
-    requestedNavigation_ = false;
     requestedInteraction_ = false;
     requestedGripperMovement_ = GripperState::UNKNOWN;
     requestedAbort_ = false;
