@@ -33,15 +33,14 @@
 
 @details The simulation includes the Interbotix Locobot, the AprilTag markers, the MoveIt2 and Navigation2. The files
 'include_camera.launch.py' and 'include_markers.launch.py' are included in this launch file to include the camera and
-the markers in the simulation. The file 'navigation_3D.rviz' is used to visualize the simulation in RViz2.
+the markers in the simulation. The file 'navigation.rviz' is used to visualize the simulation in RViz2.
 
-@param nav2_params_file: the file path to the params YAML file of Nav2. (default: 'config/simulation_navigation.yaml')
-@param robot_name: name of the robot (default: 'locobot')
-@param base_type: type of the base (default: 'kobuki')
-@param external_srdf_loc: the file path to the custom semantic description file that you would like to include in the Interbotix robot's semantic description. (default: '')
+@param nav2_param_file: the file path to the params YAML file of Nav2. (default: '')
 @param external_urdf_loc: the file path to the custom URDF file that you would like to include in the Interbotix robot. (default: 'urdf/locobot_tag.urdf.xacro')
 @param camera_number: Number of cameras to be included in the simulation. Can be 1 or 2. (default: 1)
 @param spawn_obstacle: Flag to spawn an obstacle in the simulation. Can be true or false. (default: true)
+@param container: Name of the container where to load the components. Default is 'nav2_container'.
+@param nav_controller: the Nav2 controller plugin to use. Can be 'mppi' (default) or 'rpp'.
 
 @note This file is a blend of the launch files 'interbotix_xslocobot_sim.launch.py', 'interbotix_xslocobot_moveit.launch.py' and 'navigation2.launch.py' 
 from the 'interbotix_xslocobot_sim', 'interbotix_xslocobot_moveit' and 'navigation2_bringup' packages.
@@ -68,18 +67,21 @@ from launch.actions import (
     OpaqueFunction,
     TimerAction
 )
-from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals
+from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals, IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+
 from launch.substitutions import (
     EnvironmentVariable,
     LaunchConfiguration,
-    PathJoinSubstitution
+    PathJoinSubstitution,
+    PythonExpression
 )
 from launch_ros.actions import (
     Node,
     SetRemap,
     LoadComposableNodes,
-    ComposableNodeContainer
+    ComposableNodeContainer,
+    SetParameter
 )
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.descriptions import ParameterFile, ComposableNode
@@ -99,6 +101,7 @@ def load_yaml(package_name, file_path):
             return yaml.safe_load(file)
     except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
         return None
+
 
 
 
@@ -143,77 +146,14 @@ def set_env_vars(context, *args, **kwargs):
     return [gz_resource_path_env_var, gz_model_path_env_var, gz_media_path_env_var]
 
 
+
+
+
+
 """
-@brief Main function
+@brief Function that loads all the nodes
 """
-def generate_launch_description():
-
-    # Declare launch arguments
-    robot_name = LaunchConfiguration('robot_name')
-    base_type = LaunchConfiguration('base_type')
-    external_srdf_loc = LaunchConfiguration('external_srdf_loc')
-    external_urdf_loc = LaunchConfiguration('external_urdf_loc')
-
-    # Launch arguments' default values
-    nav2_params_file_launch_arg = DeclareLaunchArgument(
-            'nav2_params_file',
-            default_value=PathJoinSubstitution([
-                FindPackageShare('simulation'),
-                'config',
-                'simulation_navigation.yaml'
-            ]),
-            description='the file path to the params YAML file.'
-    )
-
-    robot_name_launch_arg = DeclareLaunchArgument(
-            'robot_name',
-            default_value='locobot',
-            description='name of the robot (could be anything but defaults to `locobot`).',
-    )
-
-    base_type_launch_arg = DeclareLaunchArgument(
-            'base_type',
-            default_value='kobuki',
-            description='type of the base (could be `kobuki` or `create3`).',
-    )
-    
-    external_srdf_loc_launch_arg = DeclareLaunchArgument(
-            'external_srdf_loc',
-            default_value='',
-            description=(
-                'the file path to the custom semantic description file that you would like to '
-                "include in the Interbotix robot's semantic description."
-            ),
-    )
-
-    external_urdf_loc_launch_arg = DeclareLaunchArgument(
-            'external_urdf_loc',
-            default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'urdf', 'locobot_tag.urdf.xacro']),
-            description='the file path to the custom URDF file that you would like to include in the Interbotix robot.',
-    )
-
-    camera_number_launch_arg = DeclareLaunchArgument(
-            'camera_number',
-            default_value='1',
-            choices=['1', '2'],
-            description='Number of cameras to be included in the simulation. Can be 1 or 2.',
-    )
-
-    spawn_obstacle_launch_arg = DeclareLaunchArgument(
-            'spawn_obstacle',
-            default_value='true',
-            description='Flag to spawn an obstacle in the simulation. Can be true or false.',
-            choices=['true', 'false']
-    )
-
-    # Declare the 'container' launch configuration
-    arg_container = DeclareLaunchArgument(
-        name='container', default_value='',
-        description=(
-            'Name of an existing node container to load launched nodes into. '
-            'If unset, a new container will be created.'
-        )
-    )
+def launch_description(context, *args, **kwargs):
 
 ############################################################################################################
 ######################################  GAZEBO CLASSIC SIMULATION  #########################################
@@ -223,12 +163,11 @@ def generate_launch_description():
     gazebo_simulation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare("interbotix_xslocobot_sim"), 'launch', 'xslocobot_gz_classic.launch.py'])),
         launch_arguments={
-            'use_sim_time': 'true',
             'hardware_type': 'gz_classic',
             'use_lidar': 'false',
             'use_rviz': 'false',
             'use_camera': 'true',
-            'external_urdf_loc': external_urdf_loc,
+            'external_urdf_loc': LaunchConfiguration('external_urdf_loc'),
             'use_gazebo_debug': 'false',
             'robot_model': 'locobot_wx200',
             'base_type': 'kobuki',
@@ -245,7 +184,7 @@ def generate_launch_description():
         executable="spawn_entity.py",
         name="spawn_camera_1",
         arguments=["-entity", "obstacle", "-file", obstacle_model_path, 
-                   '-x', '0.0', '-y', '1.0', '-z', '0.0',
+                   '-x', '-0.5', '-y', '0.0', '-z', '0.0',
                    '-R', '0.0', '-P', '0.0', '-Y', '0.0'],
         output="screen"
     )
@@ -365,8 +304,7 @@ def generate_launch_description():
                         'robot_description',
                     'joint_state_topic':
                         'locobot/joint_states',
-                },
-                'use_sim_time': True,
+                }
             },
             robot_description_semantic,
             kinematics_config,
@@ -396,9 +334,36 @@ def generate_launch_description():
 ############################################  NAVIGATION2  #################################################
 ############################################################################################################
 
+    # Launch configurations
+    nav2_param_file = LaunchConfiguration('nav2_param_file').perform(context)
+    nav_controller = LaunchConfiguration('nav_controller').perform(context)
+
+    # Paths to default parameter files
+    default_params_mppi = PathJoinSubstitution([
+        FindPackageShare('simulation'), 'config', 'navigation_mppi.yaml'
+    ])
+    default_params_rpp = PathJoinSubstitution([
+        FindPackageShare('simulation'), 'config', 'navigation_rpp.yaml'
+    ])
+
+    # Check if param file exists
+    if nav2_param_file != '' and not os.path.exists(nav2_param_file):
+        raise RuntimeError(f"nav2_param_file '{nav2_param_file}' does not exist")
+
+    # Conditional substitution to select the default parameter file based on nav_controller
+    default_params_file = PythonExpression([
+        '"', default_params_mppi, '" if "', nav_controller, '" == \'mppi\' else "', default_params_rpp, '"'
+    ])
+
+    # Conditional substitution to select the parameter file
+    params_file = PythonExpression([
+        '"', nav2_param_file, '" if "', nav2_param_file, '" != \'\' else "', default_params_file, '"'
+    ])
+
+    # Configure parameters using RewrittenYaml
     configured_params = ParameterFile(
         RewrittenYaml(
-            source_file=LaunchConfiguration('nav2_params_file'),
+            source_file=params_file,
             param_rewrites={'autostart': 'True'},
             convert_types=True,
         ),
@@ -538,7 +503,6 @@ def generate_launch_description():
     )
 
     
-
 ############################################################################################################
 ############################################  EVENTS HANDLER  ##############################################
 ############################################################################################################
@@ -555,28 +519,81 @@ def generate_launch_description():
     # Allow Gazebo to load the simulation before launching MoveIt2 and Navigation2
     wait_gazebo = TimerAction(
         period=10.0, #Delay in seconds
-        actions=[move_group_node,
-                    arm_to_sleep_position,
+        actions=[#move_group_node,
+                    #arm_to_sleep_position,
                     nav2_launch]
     )
 
-    return LaunchDescription([
-    # Environment variables
+    return [
+        # 'use_sim_time' will be set on all nodes following the line above
+        SetParameter(name='use_sim_time', value=True),
+        # Environment variables
         OpaqueFunction(function=set_env_vars),
-    # Launch arguments
-        robot_name_launch_arg,
-        base_type_launch_arg,
-        external_srdf_loc_launch_arg,
-        external_urdf_loc_launch_arg,
-        nav2_params_file_launch_arg,
-        camera_number_launch_arg,
-        spawn_obstacle_launch_arg,
-        arg_container,
-    # Simulation launch
+        # Simulation launch
         gazebo_simulation_launch,
         wait_spawn_camera_services,
         wait_gazebo,
         spawn_obstacle,
-    # Rviz launch
-        rviz,
-    ])
+        # Rviz launch
+        rviz]
+
+
+
+
+
+
+
+def generate_launch_description():
+    # Declare launch arguments
+    nav2_param_file_launch_arg = DeclareLaunchArgument(
+            'nav2_param_file',
+            default_value='',
+            description='the file path to the navigation params YAML file.'
+    )
+ 
+    external_urdf_loc_launch_arg = DeclareLaunchArgument(
+            'external_urdf_loc',
+            default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'urdf', 'locobot_tag.urdf.xacro']),
+            description='the file path to the custom URDF file that you would like to include in the Interbotix robot.',
+    )
+
+    camera_number_launch_arg = DeclareLaunchArgument(
+            'camera_number',
+            default_value='1',
+            choices=['1', '2'],
+            description='Number of cameras to be included in the simulation. Can be 1 or 2.',
+    )
+
+    spawn_obstacle_launch_arg = DeclareLaunchArgument(
+            'spawn_obstacle',
+            default_value='true',
+            description='Flag to spawn an obstacle in the simulation. Can be true or false.',
+            choices=['true', 'false']
+    )
+
+    # Declare the 'container' launch configuration
+    container_arg = DeclareLaunchArgument(
+        name='container', default_value='',
+        description=(
+            'Name of an existing node container to load launched nodes into. '
+            'If unset, a new container will be created.'
+        )
+    )
+
+    # Set navigation controller launch configuration
+    controller_arg = DeclareLaunchArgument(
+        name='nav_controller', default_value='mppi',
+        choices=['mppi', 'rpp'],
+        description='Select the navigation controller to use, default is MPPI. If nav2_param_file param is set, this argument is ignored.'
+    )
+
+    return LaunchDescription([    
+        # Launch arguments
+        external_urdf_loc_launch_arg,
+        nav2_param_file_launch_arg,
+        camera_number_launch_arg,
+        spawn_obstacle_launch_arg,
+        container_arg,
+        controller_arg,
+        # Launch main function
+        OpaqueFunction(function=launch_description)])

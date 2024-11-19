@@ -41,13 +41,11 @@ It loads the following components:
 
 The launch file also remaps the cmd_vel topic published from the 'Controller server' to the diffdrive_controller.
 
-@param robot_name: name of the robot (default: locobot)
-@param base_type: type of the base (default: kobuki)
-@param external_srdf_loc: the file path to the custom semantic description file that you would like to include in the Interbotix robot's semantic description
 @param external_urdf_loc: the file path to the custom URDF file that you would like to include in the Interbotix robot
-@param nav2_params_file: the file path to the params YAML file (default: config/robot_navigation.yaml)
+@param nav2_param_file: the file path to the params YAML file (default: config/robot_navigation.yaml)
 @param rs_camera_param: the file path to the Realsense camera configuration file (default: config/rs_camera.yaml)
 @param container: name of an existing node container to load launched nodes into. If unset, a new container will be created
+@param nav_controller: The controller plugin to be used in Nav2. Can be 'mmpi' or 'rpp'.
 """
 
 import os
@@ -66,11 +64,16 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     TimerAction,
-    GroupAction
+    GroupAction,
+    OpaqueFunction
 )
 from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import (
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression
+)
 
 from launch_ros.actions import (
     Node,
@@ -97,67 +100,10 @@ def load_yaml(package_name, file_path):
         return None
 
 
-
-def generate_launch_description():
-
-    # Declare launch arguments
-    robot_name = LaunchConfiguration('robot_name')
-    base_type = LaunchConfiguration('base_type')
-    external_srdf_loc = LaunchConfiguration('external_srdf_loc')
-    external_urdf_loc = LaunchConfiguration('external_urdf_loc')
-
-    nav2_params_file_launch_arg = DeclareLaunchArgument(
-            name='nav2_params_file',
-            default_value=PathJoinSubstitution([
-                FindPackageShare('simulation'),
-                'config',
-                'robot_navigation.yaml'
-            ]),
-            description='the file path to the params YAML file.'
-    )
-
-    robot_name_launch_arg = DeclareLaunchArgument(
-            name='robot_name',
-            default_value='locobot',
-            description='name of the robot (could be anything but defaults to `locobot`).',
-    )
-
-    base_type_launch_arg = DeclareLaunchArgument(
-            name='base_type',
-            default_value='kobuki',
-            description='type of the base (could be `kobuki` or `create3`).',
-    )
-    
-    external_srdf_loc_launch_arg = DeclareLaunchArgument(
-            name='external_srdf_loc',
-            default_value='',
-            description=(
-                'the file path to the custom semantic description file that you would like to '
-                "include in the Interbotix robot's semantic description."
-            ),
-    )
-
-    external_urdf_loc_launch_arg = DeclareLaunchArgument(
-            name='external_urdf_loc',
-            default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'urdf', 'locobot_tag.urdf.xacro']),
-            description='the file path to the custom URDF file that you would like to include in the Interbotix robot.',
-    )
-    
-    arg_container = DeclareLaunchArgument(
-        name='container',
-        default_value='',
-        description=(
-            'Name of an existing node container to load launched nodes into. '
-            'If unset, a new container will be created.'
-        )
-    )
-
-    rs_camera_param_launch_arg = DeclareLaunchArgument(
-        name='rs_camera_param',
-        default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'config', 'rs_camera.yaml']),
-        description='the file path to the Realsense camera configuration file.'
-    )
-
+"""
+@brief Function that launches the nodes
+"""
+def launch_description(context, *args, **kwargs):
 
 ############################################################################################################
 ##############################################  MOVEIT2  ###################################################
@@ -275,8 +221,7 @@ def generate_launch_description():
                         'robot_description',
                     'joint_state_topic':
                         'locobot/joint_states',
-                },
-                'use_sim_time': True,
+                }
             },
             robot_description_semantic,
             kinematics_config,
@@ -295,16 +240,41 @@ def generate_launch_description():
 ############################################  NAVIGATION2  #################################################
 ############################################################################################################
 
+    # Launch configurations
+    nav2_param_file = LaunchConfiguration('nav2_param_file').perform(context)
+    nav_controller = LaunchConfiguration('nav_controller').perform(context)
+
+    # Paths to default parameter files
+    default_params_mppi = PathJoinSubstitution([
+        FindPackageShare('simulation'), 'config', 'navigation_mppi.yaml'
+    ])
+    default_params_rpp = PathJoinSubstitution([
+        FindPackageShare('simulation'), 'config', 'navigation_rpp.yaml'
+    ])
+
+    # Check if param file exists
+    if nav2_param_file != '' and not os.path.exists(nav2_param_file):
+        raise RuntimeError(f"nav2_param_file '{nav2_param_file}' does not exist")
+
+    # Conditional substitution to select the default parameter file based on nav_controller
+    default_params_file = PythonExpression([
+        '"', default_params_mppi, '" if "', nav_controller, '" == \'mppi\' else "', default_params_rpp, '"'
+    ])
+
+    # Conditional substitution to select the parameter file
+    params_file = PythonExpression([
+        '"', nav2_param_file, '" if "', nav2_param_file, '" != \'\' else "', default_params_file, '"'
+    ])
+
+    # Configure parameters using RewrittenYaml
     configured_params = ParameterFile(
         RewrittenYaml(
-            source_file=LaunchConfiguration('nav2_params_file'),
-            param_rewrites={'autostart': 'True',
-                            'use_sim_time': 'False'}, # Force use_sim_time to False
+            source_file=params_file,
+            param_rewrites={'autostart': 'True'},
             convert_types=True,
         ),
         allow_substs=True,
     )
-
     # Map fully qualified names to relative ones so the node's namespace can be prepended.
     # In case of the transforms (tf), currently, there doesn't seem to be a better alternative
     # https://github.com/ros/geometry2/issues/32
@@ -423,7 +393,10 @@ def generate_launch_description():
                     'use_base': 'true',
                     'hardware_type': 'actual',
                     'robot_model': 'locobot_wx200',
-                    'use_camera': 'false',
+                    'robot_name': 'locobot',
+                    'base_type': 'kobuki',
+                    'external_srdf_loc': '',
+                    'use_camera': 'false', #Camera is loaded externally
                 }.items()
     )
 
@@ -478,15 +451,60 @@ def generate_launch_description():
         ]
     )
 
-    return LaunchDescription([
-        robot_name_launch_arg,
-        base_type_launch_arg,
-        external_srdf_loc_launch_arg,
-        external_urdf_loc_launch_arg,
-        nav2_params_file_launch_arg,
-        rs_camera_param_launch_arg,
-        arg_container,
-    # Robot launch
+    return [
+        # 'use_sim_time' will be set on all nodes following the line above
+        SetParameter(name='use_sim_time', value=False),
+        # Robot launch
         ros_control_locobot,
         delayed_items
+    ]
+
+
+
+
+def generate_launch_description():
+    
+    # Declare launch arguments
+    nav2_param_file_launch_arg = DeclareLaunchArgument(
+            name='nav2_param_file',
+            default_value='',
+            description='the file path to the params YAML file. Default is \'\'.'
+    )
+
+    external_urdf_loc_launch_arg = DeclareLaunchArgument(
+            name='external_urdf_loc',
+            default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'urdf', 'locobot_tag.urdf.xacro']),
+            description='the file path to the custom URDF file that you would like to include in the Interbotix robot.',
+    )
+    
+    container_arg = DeclareLaunchArgument(
+        name='container',
+        default_value='',
+        description=(
+            'Name of an existing node container to load launched nodes into. '
+            'If unset, a new container will be created.'
+        )
+    )
+
+    rs_camera_param_launch_arg = DeclareLaunchArgument(
+        name='rs_camera_param',
+        default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'config', 'rs_camera.yaml']),
+        description='the file path to the Realsense camera configuration file.'
+    )
+
+    # Set navigation controller launch configuration
+    controller_arg = DeclareLaunchArgument(
+        name='nav_controller', default_value='mppi',
+        choices=['mppi', 'rpp'],
+        description='Select the navigation controller to use, default is MPPI. If nav2_param_file param is set, this argument is ignored.'
+    )
+
+    return LaunchDescription([
+        external_urdf_loc_launch_arg,
+        nav2_param_file_launch_arg,
+        rs_camera_param_launch_arg,
+        container_arg,
+        controller_arg,
+        # Launch main function
+        OpaqueFunction(function=launch_description)
     ])

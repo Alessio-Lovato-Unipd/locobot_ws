@@ -1,31 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root BTCPP_format="4"
-      main_tree_to_execute="Main">
-  <BehaviorTree ID="Main">
-    <RetryUntilSuccessful num_attempts="100">
-      <PipelineSequence name="NavigateWithReplanning">
-        <RateController hz="1.0">
-          <GoalUpdater input_goal="{goal}" output_goal="{goal}">
-            <Sequence name="ComputePath">
-              <ComputePathToPose goal="{goal}"
-                                 planner_id="GridBased"
-                                 path="{path}"/>
-              <TruncatePath distance="0.5"
-                            input_path="{path}"
-                            output_path="{truncated_path}"/>
-              <IsPathValid path="{truncated_path}"/>
-            </Sequence>
-          </GoalUpdater>
-        </RateController>
-        <RecoveryNode name="FollowPath"
-                      number_of_retries="1">
-          <FollowPath controller_id="FollowPath"
-                      path="{truncated_path}"
-                      server_timeout=""/>
-          <Wait wait_duration="5.0"/>
-        </RecoveryNode>
-      </PipelineSequence>
-    </RetryUntilSuccessful>
+      main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <Inverter>
+      <KeepRunningUntilFailure>
+        <Inverter>
+          <PipelineSequence>
+            <RateController hz="0.2">
+              <GoalUpdater input_goal="{goal}"
+                           output_goal="{goal}">
+                <Sequence name="ComputePath">
+                  <ComputePathToPose goal="{goal}"
+                                     planner_id="GridBased"
+                                     path="{path}"/>
+                  <TruncatePath distance="0.5"
+                                input_path="{path}"
+                                output_path="{truncated_path}"/>
+                  <IsPathValid path="{truncated_path}"/>
+                </Sequence>
+              </GoalUpdater>
+            </RateController>
+            <Fallback name="FollowPath">
+              <FollowPath controller_id="FollowPath"
+                          path="{truncated_path}"
+                          goal_checker_id="goal_checker"/>
+              <ForceFailure>
+                <Wait wait_duration="1.0"/>
+              </ForceFailure>
+            </Fallback>
+          </PipelineSequence>
+        </Inverter>
+      </KeepRunningUntilFailure>
+    </Inverter>
   </BehaviorTree>
 
   <!-- Description of Node Models (used by Groot) -->
@@ -58,9 +64,6 @@
     <Decorator ID="RateController">
       <input_port name="hz">Rate</input_port>
     </Decorator>
-    <Control ID="RecoveryNode">
-      <input_port name="number_of_retries">Number of retries</input_port>
-    </Control>
     <Action ID="TruncatePath">
       <input_port name="distance">Distance before goal to truncate</input_port>
       <input_port name="input_path">Path to truncate</input_port>
