@@ -161,17 +161,14 @@ def main(args=None):
     rclpy.init(args=args)
     image_subscriber = GestureRecognizer()
 
-    def signal_handler(sig, frame):
-        image_subscriber.destroy_node()
-        rclpy.shutdown()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, signal_handler)
-
-    if rclpy.ok():
+    try:
         rclpy.spin(image_subscriber)
-        image_subscriber.destroy_node()
-    rclpy.shutdown()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if rclpy.ok():
+            image_subscriber.destroy_node()
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
