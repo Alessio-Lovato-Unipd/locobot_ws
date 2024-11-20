@@ -12,6 +12,7 @@ The RealSense camera node is launched if the simulation argument is set to true.
 @param minimum_score Minimum score for a gesture to be recognized. Must be between 0 and 1.
 @param camera_topic The image topic to subscribe to (not available in simulation)
 @param service_name The name of the service to connect with. If null, the service client won't be used. In simulation the service is not used.
+@param rotate_image Flag to decide if the image from the camera should be flipped horizontally before being analyzed. If true (default), gestures must be performed towards down.
 
 @note The 'camera_topic' argument is not available in simulation since the image topic is already known.
 """
@@ -106,7 +107,8 @@ def launch_setup(context, *args, **kwargs):
             parameters=[
                 {'camera_topic': image_topic},
                 {'minimum_score': float(LaunchConfiguration('minimum_score').perform(context))},
-                {'service_name': service_name}
+                {'service_name': service_name},
+                {'rotate_image': LaunchConfiguration('rotate_image').perform(context) == 'true'}
             ]
     )
 
@@ -127,7 +129,7 @@ def generate_launch_description():
 
     minimum_score_arg = DeclareLaunchArgument(
             'minimum_score',
-            default_value='0.7',
+            default_value='0.5',
             description='Minimum score for a gesture to be recognized. Must be between 0 and 1.'
     )
 
@@ -143,11 +145,19 @@ def generate_launch_description():
             description='The name of the service to connect with. If null, the service client won\'t be used. Not available in simulation.'
     )
 
+    rotate_image_arg = DeclareLaunchArgument(
+        'rotate_image',
+        default_value='true',
+        choices=['true', 'false'],
+        description="Rotate the image 180° horizontally to perform gesturestowards down. Enhance ergonomics."
+    )
+
     return LaunchDescription([
         simulation_arg,
         minimum_score_arg,
         image_topic_arg,
         service_name_arg,
+        rotate_image_arg,
         OpaqueFunction(function=check_minimum_score), # Check if the minimum score is between 0 and 1
         OpaqueFunction(function=launch_setup)
     ])

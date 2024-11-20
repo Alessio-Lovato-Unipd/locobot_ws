@@ -39,6 +39,7 @@ The recognized gesture is also printed in the console.
 @param camera_topic The topic of the camera image.
 @param service_name The name of the service to connect with. If null, the service client won't be used.
 @param minimum_score The minimum score to consider a gesture (default is 0.6). Must be between 0 and 1.
+@param rotate_image Flag to decide if the image from the camera should be flipped horizontally before being analyzed. If true (default), gestures must be performed towards down.
 
 @note The gesture recognizer model is loaded from the gesture_recognizer_model folder in the package and it is the 
     'HandGestureClassifier' model with float 16 quantization type. It is the default one.
@@ -52,6 +53,11 @@ class GestureRecognizer(Node):
         self.declare_parameter('camera_topic', '/camera/image_raw', description)
         description = ParameterDescriptor(description='Name of the service to connect with')
         self.declare_parameter('service_name', '', description)
+        description = ParameterDescriptor(description="Rotate the image from the camera. Default True.")
+        self.declare_parameter('rotate_image', True, description)
+
+        # Variable to save the rotation parameter
+        self.rotate_image = self.get_parameter('rotate_image').value
 
         # Load the gesture recognizer model
         model_path = os.path.join(get_package_share_directory('gesture_recognition'), 'gesture_recognizer_model', 'gesture_recognizer.task')
@@ -125,6 +131,10 @@ class GestureRecognizer(Node):
         current_frame = self.br.imgmsg_to_cv2(data)
         # Convert the image to RGB
         current_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2RGB)
+        # Rotate the image to be able to to the gestures pointing towards the floor.
+        # This is only done to enhance ergonomics
+        if self.rotate_image:
+            current_frame = cv2.rotate(current_frame, cv2.ROTATE_180)
         # Convert to MediaPipe image format
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=current_frame)
         # Process the image
