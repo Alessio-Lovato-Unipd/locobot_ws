@@ -166,7 +166,7 @@ private:
 
             case simulation_interfaces::srv::ControlStates::Request::CLOSE_GRIPPER:
                 if (state_ == States::ARM_EXTENDED) {
-                    requestedGripperMovement_ = GripperState::GRASPING;  
+                    requestedGripperMovement_ = GripperState::HOME;  
                     response->successful_request = true;
                 } else {
                     response->successful_request = false;

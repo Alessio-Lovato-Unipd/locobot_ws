@@ -125,6 +125,8 @@ class GestureRecognizer(Node):
         current_frame = self.br.imgmsg_to_cv2(data)
         # Convert the image to RGB
         current_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2RGB)
+        # Rotate the image
+        current_frame = cv2.rotate(current_frame, cv2.ROTATE_180)
         # Convert to MediaPipe image format
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=current_frame)
         # Process the image

@@ -127,7 +127,7 @@ def generate_launch_description():
 
     minimum_score_arg = DeclareLaunchArgument(
             'minimum_score',
-            default_value='0.7',
+            default_value='0.5',
             description='Minimum score for a gesture to be recognized. Must be between 0 and 1.'
     )
 
