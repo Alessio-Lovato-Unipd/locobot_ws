@@ -15,7 +15,7 @@ find_package(slam_toolbox REQUIRED)
 find_package(gazebo_ros REQUIRED)
 find_package(apriltag_ros REQUIRED)
 find_package(image_proc REQUIRED)
-#find_package(spatio_temporal_voxel_layer REQUIRED)
+find_package(spatio_temporal_voxel_layer REQUIRED)
 
 # source file dependencies
 find_package(nav2_msgs REQUIRED)
@@ -31,6 +31,7 @@ find_package(simulation_interfaces REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_msgs REQUIRED)
+find_package(control_msgs REQUIRED)
 
 # uncomment the following section in order to fill in
 # further dependencies manually.
@@ -49,18 +50,17 @@ if(BUILD_TESTING)
 endif()
 
 
-# Action server State Machine
-add_library( action_server SHARED
+# State Machine
+add_library( state_machine_component SHARED
   src/state_machine/StateMachine.cpp src/LocobotControl.cpp)
 
-target_include_directories(action_server PRIVATE 
+target_include_directories(state_machine_component PRIVATE 
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
-target_compile_definitions(action_server PRIVATE "STATE_MACHINE_BUILDING_DLL")
-ament_target_dependencies(action_server  
+target_compile_definitions(state_machine_component PRIVATE "STATE_MACHINE_BUILDING_DLL")
+ament_target_dependencies(state_machine_component  
                               "rclcpp"
-                              "rclcpp_action"
                               "rclcpp_components"
                               "geometry_msgs"
                               "nav2_msgs"
@@ -69,8 +69,8 @@ ament_target_dependencies(action_server
                               "moveit_msgs"
                               "simulation_interfaces")
 
-rclcpp_components_register_node(action_server PLUGIN "StateMachine" EXECUTABLE state_machine_action_server)
-install(TARGETS action_server
+rclcpp_components_register_node(state_machine_component PLUGIN "StateMachine" EXECUTABLE state_machine)
+install(TARGETS state_machine_component
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
@@ -78,8 +78,8 @@ install(TARGETS action_server
 
 
 # Demo program
-add_executable(demo_no_lidar src/demo_no_lidar.cpp)
-ament_target_dependencies(demo_no_lidar rclcpp
+add_executable(demo src/Demo.cpp)
+ament_target_dependencies(demo rclcpp
                                geometry_msgs 
                                nav2_msgs 
                                rclcpp_action 
@@ -87,16 +87,8 @@ ament_target_dependencies(demo_no_lidar rclcpp
                                moveit_core
                                moveit_ros_planning_interface
                                moveit_msgs)
-target_include_directories(demo_no_lidar PUBLIC include)
+target_include_directories(demo PUBLIC include)
 
-
-
-# Tf remapper
-add_executable(tf_remapper src/TFRemapper.cpp)
-ament_target_dependencies(tf_remapper rclcpp
-                                      geometry_msgs
-                                      tf2_ros)
-target_include_directories(tf_remapper PUBLIC include)
 
 # Arm sleep position
 add_executable(arm_sleep_position src/ArmSleepPosition.cpp)
@@ -116,19 +108,12 @@ ament_target_dependencies(human_emulator rclcpp
                                geometry_msgs
                                tf2_ros)
 
-#TF publisher
-add_executable(tf_publisher src/TFPublisher.cpp)
-ament_target_dependencies(tf_publisher rclcpp
-                                      geometry_msgs
-                                      tf2_ros)
-
 # install targets
 install(TARGETS
-  demo_no_lidar
-  tf_remapper
+  demo
   arm_sleep_position
   human_emulator
-  tf_publisher
+  state_machine
   DESTINATION lib/${PROJECT_NAME})
 
 # install directories

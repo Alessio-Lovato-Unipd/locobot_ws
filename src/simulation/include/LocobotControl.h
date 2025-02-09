@@ -216,7 +216,7 @@ public:
      * Waits for the arm to stop moving before destroying the object.
      */
     ~LocobotControl() {
-        while (arm_status_.is_moving()) {
+        while (arm_status_.is_moving() or navigation_status_.isMoving()) {
            // Wait for the active threads to finish
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
@@ -272,26 +272,24 @@ public:
     /**
      * @brief Stop the arm movement if it is in progress.
      * 
-     * @param arm_interface_name The name of the MoveGroupInterface for the arm. 
-     * Default is set as the arm interface name defined in the parameters.
-     * @param gripper_interface_name The name of the MoveGroupInterface for the gripper. 
-     * Default is set as the gripper interface name defined in the parameters.
      */
-    void StopArm(std::optional<std::string> arm_interface_name = std::nullopt,
-                 std::optional<std::string> gripper_interface_name = std::nullopt);
+    void StopArm();
 
     /**
      * @brief Cancel all the goals sent to the navigation server.
      * 
-     * @note The function waits for the action server to cancel all the goals 
-     * before returning (synchronous function).
+     * @details Does not wait for the action server to be available and the answer to the cancel request.
      * 
-     * @return True if the goals are cancelled, false otherwise.
+     * @param async_cancellation True if want to wait the response of the cancel request, false otherwise.
+     * 
+     * @return True if is not asynchronous or if the request has succeeded, false otherwise.
+     * 
+     * @note The function send a cancel request to the navigation action server to stop the robot.
      */
-    bool cancelNavigationGoal();
+    bool cancelNavigationGoal(const bool async_cancellation = false);
 
     // Return true if the navigation action server is available, false otherwise. Timeout is set to 1 second.
-    bool isNavigationServerAvailable() const {return this->client_ptr_->wait_for_action_server(std::chrono::seconds(1));};
+    bool isNavigationServerAvailable() const {return this->nav_client_ptr_->wait_for_action_server(std::chrono::seconds(1));};
     // Return true if the arm is moving or planning, false otherwise
     bool isArmMoving() const {return arm_status_.is_moving();};
     // Return true if the arm is in error (planning or execution failed), false otherwise
@@ -322,7 +320,8 @@ public:
 
 private:
     // Action client for the navigation stack
-    rclcpp_action::Client<NavigateToPose>::SharedPtr client_ptr_;
+    rclcpp_action::Client<NavigateToPose>::SharedPtr nav_client_ptr_;
+
     
 
     // Callbacks for the action client

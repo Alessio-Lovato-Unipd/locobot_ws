@@ -11,7 +11,6 @@
 
 #include "LocobotControl.h"
 #include "rclcpp/rclcpp.hpp"
-#include "rclcpp_action/rclcpp_action.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
 #include "std_msgs/msg/u_int8.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -32,39 +31,6 @@
 #include <cmath>
 #include <mutex>
 
-
-
-/**
- * @brief Enum class to represent the different states of the state machine.
- * 
- * The state machine is used to control the different states of the behavior of the robot.
- */
-enum class States : uint8_t {
-    IDLE,                   // Waits for a new command
-    SECURE_ARM,             // Secure the arm to avoid collision in navigation
-    WAIT_ARM_SECURING,      // Wait for the arm to be secured
-    SEND_NAV_GOAL,          // Send the navigation goal to the navigation stack
-    WAIT_NAVIGATION,        // Wait for the navigation to reach the goal
-    WAIT_ARM_EXTENDING,     // Wait for the arm to be extended
-    ARM_EXTENDED,           // Open the gripper to release the object upon command
-    WAIT_GRIPPER,           // Wait for the gripper to open
-    WAIT_ARM_RETRACTING,    // Wait for the arm to retract
-    ERROR,                  // Error state
-    ABORT,                  // Abort the machine
-    STOPPING                // Stop the machine
-};
-
-/**
- * @brief Enum class to represent the different results of the state machine.
- * 
- * The result of the state machine is used to determine the behavior of the main loop.
- */
-enum class Result : uint8_t {
-    SUCCESS,    // The machine has completed the task successfully and the main loop terminates
-    FAILURE,    // The machine has failed to complete the task
-    RUNNING,    // The machine is still running
-    INITIALIZED // The machine has been initialized
-};
 
 
 /**
@@ -89,10 +55,68 @@ public:
      */
     ~StateMachine();
 
+
+
+    // Internal classes
+    /**
+     * @brief Enum class to represent the different states of the state machine.
+     * 
+     * The state machine is used to control the different states of the behavior of the robot.
+     */
+    enum class States : uint8_t {
+        IDLE,                   // Waits for a new command
+        SECURE_ARM,             // Secure the arm to avoid collision in navigation
+        WAIT_ARM_SECURING,      // Wait for the arm to be secured
+        SEND_NAV_GOAL,          // Send the navigation goal to the navigation stack
+        WAIT_NAVIGATION,        // Wait for the navigation to reach the goal
+        WAIT_ARM_EXTENDING,     // Wait for the arm to be extended
+        ARM_EXTENDED,           // Open the gripper to release the object upon command
+        WAIT_GRIPPER,           // Wait for the gripper to open
+        WAIT_ARM_RETRACTING,    // Wait for the arm to retract
+        ERROR,                  // Error state
+        ABORT,                  // Abort the machine
+        STOPPING                // Stop the machine
+    };
+
+
+    /**
+     * @brief Enum class to represent the different results of the state machine.
+     * 
+     * The result of the state machine is used to determine the behavior of the main loop.
+     */
+    enum class Result : uint8_t {
+        SUCCESS,    // The machine has completed the task successfully and the main loop terminates
+        FAILURE,    // The machine has failed to complete the task
+        RUNNING,    // The machine is still running
+        INITIALIZED // The machine has been initialized
+    };
+    
+    
+    
     // Functions
     void nextState(); // Operate the state machine (send it to the next state)
-    std::string getLastError() const {return errorMsg_;} // Get the last error message
-    States getMachineState() const {return state_;} // Get the current state of the machine
+    std::string getLastError() const {return errorMsg_;}; // Get the last error message
+    States getMachineInternalState() const {return state_;}; // Get the current state of the machine
+    Result getMachineExternalState() const {return result_;}; // Get the external state of the machine
+    
+    
+    /**
+     * @brief Convert the state enum to a string.
+     * 
+     * @param state The state to convert.
+     * 
+     * @return The string representation of the state.
+     */
+    std::string state_to_string(const States state) const;
+
+    /**
+     * @brief Convert the result enum to a string.
+     * 
+     * @param result The result to convert.
+     * 
+     * @return The string representation of the result.
+     */
+    std::string result_to_string(const Result result) const;
 
 
 private:
@@ -105,7 +129,7 @@ private:
     /**
      * @brief Service callback to return the last error message and state of the state machine.
      */
-    void return_last_error(const std::shared_ptr<simulation_interfaces::srv::LastError::Request> request,
+    void return_last_error(const std::shared_ptr<simulation_interfaces::srv::LastError::Request>,
                            std::shared_ptr<simulation_interfaces::srv::LastError::Response> response) {
 
         response->error_message = errorMsg_;
@@ -122,7 +146,7 @@ private:
      * 
      * @note The machine will enter the IDLE state if possible.
      */
-    void clear_error_callback(const std::shared_ptr<simulation_interfaces::srv::ClearError::Request> request,
+    void clear_error_callback(const std::shared_ptr<simulation_interfaces::srv::ClearError::Request>,
                            std::shared_ptr<simulation_interfaces::srv::ClearError::Response> response) {
 
         response->successful = clear_error();
@@ -185,7 +209,11 @@ private:
 
             case simulation_interfaces::srv::ControlStates::Request::CLOSE_GRIPPER:
                 if (state_ == States::ARM_EXTENDED) {
-                    requestedGripperMovement_ = GripperState::GRASPING;  
+                    /**
+                    * NOTE: The gripper is set to HOME to allow the grasping of the object.
+                    *       GripperState::GRASPING is not used to avoid the gripper to close too much.
+                    */
+                    requestedGripperMovement_ = GripperState::HOME;  
                     response->successful_request = true;
                 } else {
                     response->successful_request = false;
@@ -209,7 +237,7 @@ private:
 
     // Variables
 
-    States state_{States::IDLE};  // Current state of the machine
+    States state_{States::ERROR};  // Current state of the machine
     Result result_{Result::INITIALIZED}; // Result of the machine
     std::string errorMsg_{""}; // Error message
     bool requestedAbort_{false}; // Request to abort the machine
@@ -217,20 +245,21 @@ private:
     bool requestedInteraction_{false}; // Request to interact with the human
     GripperState requestedGripperMovement_{GripperState::UNKNOWN}; // Requested gripper movement
     std::mutex request_mutex_; // Mutex to protect the state machine
+    std::mutex next_state_mutex_; // Mutex to protect the next state
     std::string robot_frame_; // Frame of the robot tag
     std::string map_frame_; // Frame of the map tag
     std::string human_frame_; // Frame of the human tag
     bool follow_human_; // Follow the human or not after the first position
     int sleep_time_; // Sleep time in milliseconds for the state machine cycle
-    geometry_msgs::msg::PoseStamped last_human_pose_; // Pose of the human
+    bool debug_; // Debug flag
+    int tf_tolerance_; // Tolerance in seconds for the TF
 
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};// Listener to the tf
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_{nullptr};// Buffer for the tf
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_updater_; // Publisher to update the navigation goal
-    //rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr state_publisher_; // Publisher to update the state of the machine
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr result_publisher_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_publisher_;
     std::thread machine_thread_; // Thread to operate the state machine
-    std::thread arm_thread_; // Thread that operates the gripper and arm
 
     // Functions
     void machineError(const std::string &msg); // Set the machine in error state and save the error message
@@ -265,7 +294,7 @@ private:
      * 
      * @return True if the requested TF is available, false otherwise.
      */
-    bool lookup_tf(const std::string &to_frame, const std::string &from_frame);
+    bool checkTf(const std::string &to_frame, const std::string &from_frame);
 
     /**
      * @brief Function to calculate the planar Euclidean distance between the robot and the human.
@@ -283,15 +312,6 @@ private:
      * @return The pose of the human relative to the map frame.
      */
     geometry_msgs::msg::PoseStamped GetHumanPose();
-
-    /**
-     * @brief Convert the state enum to a string.
-     * 
-     * @param state The state to convert.
-     * 
-     * @return The string representation of the state.
-     */
-    std::string state_to_string(const States state) const;
 
 };
 

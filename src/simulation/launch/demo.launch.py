@@ -12,7 +12,8 @@ def generate_launch_description():
         remappings=[
             ('robot_description', '/locobot/robot_description'),
             ('robot_description_semantic', '/locobot/robot_description_semantic')
-        ]
+        ],
+        parameters=[{'use_sim_time': False}],
     )
 
     return LaunchDescription([demo])

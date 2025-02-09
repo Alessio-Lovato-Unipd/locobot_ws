@@ -6,7 +6,7 @@
       <KeepRunningUntilFailure>
         <Inverter>
           <PipelineSequence>
-            <RateController hz="0.2">
+            <RateController hz="0.3">
               <GoalUpdater input_goal="{goal}"
                            output_goal="{goal}">
                 <Sequence name="ComputePath">

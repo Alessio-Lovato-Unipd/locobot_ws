@@ -168,6 +168,7 @@ def launch_description(context, *args, **kwargs):
             'use_rviz': 'false',
             'use_camera': 'true',
             'external_urdf_loc': LaunchConfiguration('external_urdf_loc'),
+            'external_srdf_loc': '',
             'use_gazebo_debug': 'false',
             'robot_model': 'locobot_wx200',
             'base_type': 'kobuki',
@@ -519,8 +520,8 @@ def launch_description(context, *args, **kwargs):
     # Allow Gazebo to load the simulation before launching MoveIt2 and Navigation2
     wait_gazebo = TimerAction(
         period=10.0, #Delay in seconds
-        actions=[#move_group_node,
-                    #arm_to_sleep_position,
+        actions=[move_group_node,
+                    arm_to_sleep_position,
                     nav2_launch]
     )
 

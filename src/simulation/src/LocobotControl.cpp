@@ -41,7 +41,7 @@ LocobotControl::LocobotControl(const std::string name, const std::string ns, con
         return;
     }
 
-    this->client_ptr_ = rclcpp_action::create_client<NavigateToPose>(
+    this->nav_client_ptr_ = rclcpp_action::create_client<NavigateToPose>(
     this->get_node_base_interface(),
     this->get_node_graph_interface(),
     this->get_node_logging_interface(),
@@ -56,13 +56,13 @@ LocobotControl::LocobotControl(const std::string name, const std::string ns, con
 void LocobotControl::MoveBaseTo(const geometry_msgs::msg::PoseStamped &pose,
                                 std::optional<double> timeout) {
 
-    if (!this->client_ptr_) {
+    if (!this->nav_client_ptr_) {
       RCLCPP_ERROR(this->get_logger(), "Action client not initialized");
     }
 
     // Wait for the action server to be available
     std::chrono::seconds timeout_duration = std::chrono::seconds(static_cast<long>(timeout.value_or(timeout_)));
-    if (!client_ptr_->wait_for_action_server(timeout_duration)) {
+    if (!nav_client_ptr_->wait_for_action_server(timeout_duration)) {
         RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
         rclcpp::shutdown();
         return;
@@ -77,7 +77,7 @@ void LocobotControl::MoveBaseTo(const geometry_msgs::msg::PoseStamped &pose,
     NavigateToPose::Goal goal;
     goal.pose = pose;
     navigation_status_.startNavigation();
-    auto goal_handle_future = client_ptr_->async_send_goal(goal, send_goal_options);
+    auto goal_handle_future = nav_client_ptr_->async_send_goal(goal, send_goal_options);
 }
 
 
@@ -125,15 +125,19 @@ void LocobotControl::result_callback(const GoalHandle::WrappedResult &result) {
 
 
 
-bool LocobotControl::cancelNavigationGoal() {
-    auto future = client_ptr_->async_cancel_all_goals();
-    auto result = future.get();
+bool LocobotControl::cancelNavigationGoal(const bool async_cancellation) {
+    auto future = nav_client_ptr_->async_cancel_all_goals();
+    // If asynchronous wait for the response
+    if (async_cancellation) {
+        auto result = future.get();
 
-    if (result->return_code == action_msgs::srv::CancelGoal::Response::ERROR_NONE) {
-        return true;
-    } else {
-        return false;
+        if (result->return_code == action_msgs::srv::CancelGoal::Response::ERROR_NONE) {
+            return true;
+        } else {
+            return false;
+        }
     }
+    return true;
 }
 
 
@@ -233,17 +237,21 @@ bool LocobotControl::ExecutePlan(const std::string interface_name, const PoseOrS
 
 
 
-void LocobotControl::StopArm(std::optional<std::string> arm_interface_name,
-                             std::optional<std::string> gripper_interface_name) {
-    auto move_group_interface = MoveGroupInterface(shared_from_this(), 
-                                            arm_interface_name.value_or(arm_interface_name_));
-    move_group_interface.stop();
-    move_group_interface = MoveGroupInterface(shared_from_this(),
-                                    gripper_interface_name.value_or(gripper_interface_name_));
-    move_group_interface.stop();
-    arm_status_.in_motion(false);
-    arm_status_.errorState(false);
-    arm_status_.updateStatus(ArmPose::UNKNOWN, GripperState::UNKNOWN);
+void LocobotControl::StopArm() {
+    // Send a stop command to the arm and gripper
+
+    /**
+     * NOTE: The following code is commented out because the stop action has unexpected behavior in the
+     * actual robot. When the stop is called, the motors of the arm goes to an unsafe position rather than
+     * stopping in the current position. This is not the expected behavior and it is not clear why this
+     * happens. This behavior is not present in the simulation.
+     */
+    
+    // auto move_group_interface = MoveGroupInterface(shared_from_this(), arm_interface_name_);
+    // move_group_interface.stop();
+    // move_group_interface = MoveGroupInterface(shared_from_this(), gripper_interface_name_);
+    //  move_group_interface.stop();
+
 }
 
 
