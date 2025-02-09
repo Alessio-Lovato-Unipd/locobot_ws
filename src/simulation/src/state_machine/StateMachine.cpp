@@ -161,7 +161,7 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
     param_desc.description = "Time [ms] to sleep between cycles of the state machine";
     this->declare_parameter("sleep_time", 100, param_desc);
     param_desc.description = "Topic where the state of the state machine is published";
-    this->declare_parameter("state_topic", "machine_state", param_desc);
+    this->declare_parameter("state_topic", "state_machine/state", param_desc);
     param_desc.description = "Publish the internal state of the machine";
     this->declare_parameter("debug", false, param_desc);
     param_desc.description = "Time tolerance [s] for missing TFs before triggering an error";
@@ -194,6 +194,9 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
     }else if (this->get_parameter("state_topic").as_string() == "") {
         RCLCPP_ERROR(this->get_logger(), "State topic was an empty string");
         throw std::invalid_argument("State topic was an empty string");
+    }else if (tf_tolerance_ <= 0) {
+        RCLCPP_ERROR(this->get_logger(), "TF tolerance must be greater than 0");
+        throw std::invalid_argument("TF tolerance must be greater than 0");
     }
 
     // Initialize the tf buffer and listener
@@ -218,8 +221,9 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
     // Create the update goal publisher
     nav_goal_updater_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(this->get_parameter("goal_update_topic").as_string(), 10);
 
-    // Create the state publisher
-    state_publisher_ = this->create_publisher<std_msgs::msg::String>("state_machine/internal_state", 10);
+    // Create the state publisher (if debug is enabled also publish the internal state)
+    if (debug_)
+        state_publisher_ = this->create_publisher<std_msgs::msg::String>("state_machine/internal_state", 10);
     result_publisher_ = this->create_publisher<std_msgs::msg::String>(this->get_parameter("state_topic").as_string(), 10);
 
     // Create the thread to spin the machine
@@ -263,8 +267,10 @@ void StateMachine::spinMachine() {
         result_publisher_->publish(status);
 
         // Update the feedback message
-        status.data = state_to_string(state_);
-        state_publisher_->publish(status);
+        if (debug_) {
+            status.data = state_to_string(state_);
+            state_publisher_->publish(status);
+        }
 
         if (last_status != result_) {
             last_status = result_;

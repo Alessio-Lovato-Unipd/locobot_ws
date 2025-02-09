@@ -42,7 +42,7 @@ def setup_nodes(context, *args, **kwargs):
     kinect_params = load_yaml(context)
     camera_namespace = "k02"
     kinect_node_params = {
-        'sensor_sn': 'a000071601712',  # Serial number of the camera 'k02'
+        'sensor_sn': 'a000181401712',  # Serial number of the camera 'k02'
         'depth_enabled': True,  # If set to false, the depth frame is rotated wrongly
         'rgb_point_cloud': False,
         'color_enabled': True,

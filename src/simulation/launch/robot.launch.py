@@ -42,10 +42,10 @@ It loads the following components:
 The launch file also remaps the cmd_vel topic published from the 'Controller server' to the diffdrive_controller.
 
 @param external_urdf_loc: the file path to the custom URDF file that you would like to include in the Interbotix robot
-@param nav2_param_file: the file path to the params YAML file (default: config/robot_navigation.yaml)
+@param nav2_param_file: the file path to the params YAML file (default: '')
 @param rs_camera_param: the file path to the Realsense camera configuration file (default: config/rs_camera.yaml)
 @param container: name of an existing node container to load launched nodes into. If unset, a new container will be created
-@param nav_controller: The controller plugin to be used in Nav2. Can be 'mmpi' or 'rpp'.
+@param nav_controller: The controller plugin to be used in Nav2. Can be 'mmpi' or 'rpp'. (default: 'mmpi')
 """
 
 import os
@@ -439,6 +439,21 @@ def launch_description(context, *args, **kwargs):
     )
 
 ############################################################################################################
+############################################  STATE MACHINE   ##############################################
+############################################################################################################
+
+    state_machine = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory('simulation'), 'launch', 'state_machine.launch.py')
+        ),
+        launch_arguments={
+            'debug': 'true',
+            'use_sim_time': 'false',
+        }.items(),
+        condition=LaunchConfigurationEquals('state_machine', 'true')
+    )
+
+############################################################################################################
 ############################################  EVENTS HANDLER  ##############################################
 ############################################################################################################
 
@@ -451,12 +466,18 @@ def launch_description(context, *args, **kwargs):
         ]
     )
 
+    launch_state_machine = TimerAction(
+        period=10.0, #Delay in seconds
+        actions=[state_machine]
+    )
+
     return [
         # 'use_sim_time' will be set on all nodes following the line above
         SetParameter(name='use_sim_time', value=False),
         # Robot launch
         ros_control_locobot,
-        delayed_items
+        delayed_items,
+        launch_state_machine
     ]
 
 
@@ -499,12 +520,20 @@ def generate_launch_description():
         description='Select the navigation controller to use, default is MPPI. If nav2_param_file param is set, this argument is ignored.'
     )
 
+    # Set the state machine launch configuration
+    state_machine_arg = DeclareLaunchArgument(
+        name='state_machine', default_value='false',
+        choices=['true', 'false'],
+        description='Select if the state machine should be launched, default is false.'
+    )
+
     return LaunchDescription([
         external_urdf_loc_launch_arg,
         nav2_param_file_launch_arg,
         rs_camera_param_launch_arg,
         container_arg,
         controller_arg,
+        state_machine_arg,
         # Launch main function
         OpaqueFunction(function=launch_description)
     ])

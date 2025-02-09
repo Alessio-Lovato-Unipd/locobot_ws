@@ -2,8 +2,8 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>simulation</name>
-  <version>0.0.0</version>
-  <description>This package contains the code to perform slam and navigation in Gazebo</description>
+  <version>0.1.0</version>
+  <description>This package contains the code to run the LoCoBot WX200 both in simulation and real world</description>
   <maintainer email="alessio.lovato.1@studenti.unipd.it">alessio</maintainer>
   <license>Apache-2.0</license>
 
@@ -31,6 +31,7 @@
   <depend>moveit_core</depend>
   <depend>moveit_ros_planning_interface</depend>
   <depend>moveit_msgs</depend>
+  <depend>control_msgs</depend>
 
   <!-- Interbotix dependencies -->
   <depend>interbotix_xs_modules</depend>

@@ -503,6 +503,20 @@ def launch_description(context, *args, **kwargs):
         output='screen'
     )
 
+############################################################################################################
+############################################  STATE MACHINE   ##############################################
+############################################################################################################
+
+    state_machine = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory('simulation'), 'launch', 'state_machine.launch.py')
+        ),
+        launch_arguments={
+            'debug': 'true',
+            'use_sim_time': 'true',
+        }.items(),
+        condition=LaunchConfigurationEquals('state_machine', 'true')
+    )
     
 ############################################################################################################
 ############################################  EVENTS HANDLER  ##############################################
@@ -525,6 +539,11 @@ def launch_description(context, *args, **kwargs):
                     nav2_launch]
     )
 
+    launch_state_machine = TimerAction(
+        period=15.0, #Delay in seconds
+        actions=[state_machine]
+    )
+
     return [
         # 'use_sim_time' will be set on all nodes following the line above
         SetParameter(name='use_sim_time', value=True),
@@ -536,7 +555,10 @@ def launch_description(context, *args, **kwargs):
         wait_gazebo,
         spawn_obstacle,
         # Rviz launch
-        rviz]
+        rviz,
+        # State machine launch
+        launch_state_machine
+    ]
 
 
 
@@ -588,6 +610,13 @@ def generate_launch_description():
         description='Select the navigation controller to use, default is MPPI. If nav2_param_file param is set, this argument is ignored.'
     )
 
+    # Set the state machine launch configuration
+    state_machine_arg = DeclareLaunchArgument(
+        name='state_machine', default_value='false',
+        choices=['true', 'false'],
+        description='Select if the state machine should be launched, default is false.'
+    )
+
     return LaunchDescription([    
         # Launch arguments
         external_urdf_loc_launch_arg,
@@ -596,5 +625,6 @@ def generate_launch_description():
         spawn_obstacle_launch_arg,
         container_arg,
         controller_arg,
+        state_machine_arg,
         # Launch main function
         OpaqueFunction(function=launch_description)])

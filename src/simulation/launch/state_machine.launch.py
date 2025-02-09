@@ -27,6 +27,13 @@ def generate_launch_description():
         description='Enable human following after the first position'
     )
 
+    # Declare the tf_tolerance argument
+    tf_tolerance_arg = DeclareLaunchArgument(
+        'tf_tolerance',
+        default_value='5.0',
+        description='Tolerance [s] for the tf listener. Must be greater than 0',
+    )
+
     state_machine = Node(
         package='simulation',
         executable='state_machine',
@@ -39,11 +46,13 @@ def generate_launch_description():
         parameters=[
             {
                 'debug': LaunchConfiguration('debug'),
-                'follow_human': LaunchConfiguration('human_following')
+                'follow_human': LaunchConfiguration('human_following'),
+                'tf_tolerance': LaunchConfiguration('tf_tolerance')
             }
         ]
     )
 
     return LaunchDescription([debug_arg,
                               human_following_arg,
+                              tf_tolerance_arg,
                               state_machine])
