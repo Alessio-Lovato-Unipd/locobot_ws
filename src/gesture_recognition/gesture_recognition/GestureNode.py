@@ -19,7 +19,7 @@ from mediapipe.tasks.python import vision
 
 import os
 from ament_index_python import get_package_share_directory
-from simulation_interfaces.srv import ControlStates
+from locobot_control_interfaces.srv import ControlStates
 import rcl_interfaces.msg
 
 
@@ -33,7 +33,7 @@ import rcl_interfaces.msg
     - 'Open_Palm': Sets the state to IDLE.
     - 'ILoveYou': Sets the state to ABORT.
 
-The recognized gestures are sent to the simulation using a service client. The service name is given as a parameter.
+The recognized gestures are published using a service client. The service name is given as a parameter.
 The recognized gesture is also printed in the console.
 
 @param camera_topic The topic of the camera image.
@@ -82,16 +82,16 @@ class GestureRecognizer(Node):
             10)
         self.br = CvBridge()
 
-        # Create a service client to control the simulation
+        # Create a service client to control the state machine
         self.use_client = self.get_parameter('service_name').value != ''
         if self.use_client:
             self.client = self.create_client(ControlStates, self.get_parameter('service_name').value)
-            while not self.client.wait_for_service(timeout_sec=0.5):
+            while not self.client.wait_for_service(timeout_sec=1.0):
                 self.get_logger().info('service not available, waiting again...')
             self.req = ControlStates.Request()
 
     """
-    @brief Sends the state corresponding to the given gesture to the simulation.
+    @brief Sends the state corresponding to the given gesture to the state machine.
     @param gesture The gesture string. 
     @note Possible values are:
         - 'Closed_Fist': Sets the state to CLOSE_GRIPPER.
@@ -118,7 +118,7 @@ class GestureRecognizer(Node):
             self.req.state = ControlStates.Request.ABORT
         else:
             return
-        # Send the new state to the simulation
+        # Send the new state to the state machine
         self.future = self.client.call_async(self.req)
     
     """

@@ -21,9 +21,9 @@
 
 
 // Services and actions
-#include "simulation_interfaces/srv/last_error.hpp"
-#include "simulation_interfaces/srv/clear_error.hpp"
-#include "simulation_interfaces/srv/control_states.hpp"
+#include "locobot_control_interfaces/srv/last_error.hpp"
+#include "locobot_control_interfaces/srv/clear_error.hpp"
+#include "locobot_control_interfaces/srv/control_states.hpp"
 
 #include <string>
 #include <chrono>
@@ -124,13 +124,13 @@ private:
     // Last Error Service Server
     
     // Service to request the last error message
-    rclcpp::Service<simulation_interfaces::srv::LastError>::SharedPtr get_last_error_; 
+    rclcpp::Service<locobot_control_interfaces::srv::LastError>::SharedPtr get_last_error_; 
 
     /**
      * @brief Service callback to return the last error message and state of the state machine.
      */
-    void return_last_error(const std::shared_ptr<simulation_interfaces::srv::LastError::Request>,
-                           std::shared_ptr<simulation_interfaces::srv::LastError::Response> response) {
+    void return_last_error(const std::shared_ptr<locobot_control_interfaces::srv::LastError::Request>,
+                           std::shared_ptr<locobot_control_interfaces::srv::LastError::Response> response) {
 
         response->error_message = errorMsg_;
         response->last_state = state_to_string(state_);
@@ -139,15 +139,15 @@ private:
     // Clear Error Service Server
 
     // Service to clear error or abort state
-    rclcpp::Service<simulation_interfaces::srv::ClearError>::SharedPtr clear_error_service_; 
+    rclcpp::Service<locobot_control_interfaces::srv::ClearError>::SharedPtr clear_error_service_; 
 
     /**
      * @brief Service callback to clear the error (or aborted) state and message error.
      * 
      * @note The machine will enter the IDLE state if possible.
      */
-    void clear_error_callback(const std::shared_ptr<simulation_interfaces::srv::ClearError::Request>,
-                           std::shared_ptr<simulation_interfaces::srv::ClearError::Response> response) {
+    void clear_error_callback(const std::shared_ptr<locobot_control_interfaces::srv::ClearError::Request>,
+                           std::shared_ptr<locobot_control_interfaces::srv::ClearError::Response> response) {
 
         response->successful = clear_error();
     }
@@ -155,7 +155,7 @@ private:
     // Gripper control service server
 
     // Service to control the state machine state changes
-    rclcpp::Service<simulation_interfaces::srv::ControlStates>::SharedPtr control_state_service_; 
+    rclcpp::Service<locobot_control_interfaces::srv::ControlStates>::SharedPtr control_state_service_; 
 
     /**
      * @brief Service callback to control the state machine state's changes.
@@ -163,8 +163,8 @@ private:
      * @note The service allows to change the state of the machine to IDLE, NAVIGATION, INTERACTION, 
      * or ABORT.
      */
-    void change_state_callback(const std::shared_ptr<simulation_interfaces::srv::ControlStates::Request> request,
-                           std::shared_ptr<simulation_interfaces::srv::ControlStates::Response> response) {
+    void change_state_callback(const std::shared_ptr<locobot_control_interfaces::srv::ControlStates::Request> request,
+                           std::shared_ptr<locobot_control_interfaces::srv::ControlStates::Response> response) {
     
         // N.B requestedInteraction_ and requestedNavigation_ must be mutually exclusive
         
@@ -172,13 +172,13 @@ private:
         std::lock_guard<std::mutex> lock(request_mutex_);
         
         switch (request->state) {
-            case simulation_interfaces::srv::ControlStates::Request::IDLE:
+            case locobot_control_interfaces::srv::ControlStates::Request::IDLE:
                     requestedInteraction_ = false;
                     requestedNavigation_ = false;
                     response->successful_request = true;
                 break;
 
-            case simulation_interfaces::srv::ControlStates::Request::NAVIGATION:
+            case locobot_control_interfaces::srv::ControlStates::Request::NAVIGATION:
                 if (state_ == States::IDLE) {
                     requestedNavigation_ = true;
                     requestedInteraction_ = false;
@@ -188,7 +188,7 @@ private:
                 }
                 break;
 
-            case simulation_interfaces::srv::ControlStates::Request::INTERACTION:
+            case locobot_control_interfaces::srv::ControlStates::Request::INTERACTION:
                 if (state_ == States::IDLE) {
                     requestedNavigation_ = false;
                     requestedInteraction_ = true;
@@ -198,7 +198,7 @@ private:
                 }
                 break;
 
-            case simulation_interfaces::srv::ControlStates::Request::OPEN_GRIPPER:
+            case locobot_control_interfaces::srv::ControlStates::Request::OPEN_GRIPPER:
                 if (state_ == States::ARM_EXTENDED) {
                     requestedGripperMovement_ = GripperState::RELEASED;
                     response->successful_request = true;
@@ -207,7 +207,7 @@ private:
                 }
                 break;
 
-            case simulation_interfaces::srv::ControlStates::Request::CLOSE_GRIPPER:
+            case locobot_control_interfaces::srv::ControlStates::Request::CLOSE_GRIPPER:
                 if (state_ == States::ARM_EXTENDED) {
                     /**
                     * NOTE: The gripper is set to HOME to allow the grasping of the object.
@@ -220,7 +220,7 @@ private:
                 }
                 break;
 
-            case simulation_interfaces::srv::ControlStates::Request::ABORT:
+            case locobot_control_interfaces::srv::ControlStates::Request::ABORT:
                 requestedAbort_ = true;
                 requestedInteraction_ = false;
                 requestedNavigation_ = false;

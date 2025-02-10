@@ -35,7 +35,7 @@ def generate_launch_description():
     )
 
     state_machine = Node(
-        package='simulation',
+        package='locobot_control',
         executable='state_machine',
         output='screen',
         # Remapping is mandatory due to the namespace of interbotix packages

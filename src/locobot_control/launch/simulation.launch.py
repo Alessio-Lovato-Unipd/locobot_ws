@@ -27,29 +27,29 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 """
-@file robot.launch.py
-@description Launch file for actual Iterbotix Locobot with Navigation2 and MoveIt2.
+@file simulation.launch.py
 
-@details
-This launch file is used to bring up the Interbotix Locobot with Navigation2 and MoveIt2.
-It is intended to be used over ssh in the actual robot.
-It loads the following components:
-    - Interbotix ROS Control
-    - Navigation2
-    - MoveIt2
-    - Realsense2 Camera
+@brief This file is used to launch a complete simulation of the Locobot without the lidar sensor. Gazebosim classic is used.
 
-The launch file also remaps the cmd_vel topic published from the 'Controller server' to the diffdrive_controller.
+@details The simulation includes the Interbotix Locobot, the AprilTag markers, the MoveIt2 and Navigation2. The files
+'include_camera.launch.py' and 'include_markers.launch.py' are included in this launch file to include the camera and
+the markers in the simulation. The file 'navigation.rviz' is used to visualize the simulation in RViz2.
 
-@param external_urdf_loc: the file path to the custom URDF file that you would like to include in the Interbotix robot
-@param nav2_param_file: the file path to the params YAML file (default: '')
-@param rs_camera_param: the file path to the Realsense camera configuration file (default: config/rs_camera.yaml)
-@param container: name of an existing node container to load launched nodes into. If unset, a new container will be created
-@param nav_controller: The controller plugin to be used in Nav2. Can be 'mmpi' or 'rpp'. (default: 'mmpi')
+@param nav2_param_file: the file path to the params YAML file of Nav2. (default: '')
+@param external_urdf_loc: the file path to the custom URDF file that you would like to include in the Interbotix robot. (default: 'urdf/locobot_tag.urdf.xacro')
+@param camera_number: Number of cameras to be included in the simulation. Can be 1 or 2. (default: 1)
+@param spawn_obstacle: Flag to spawn an obstacle in the simulation. Can be true or false. (default: true)
+@param container: Name of the container where to load the components. Default is 'nav2_container'.
+@param nav_controller: the Nav2 controller plugin to use. Can be 'mppi' (default) or 'rpp'.
+
+@note This file is a blend of the launch files 'interbotix_xslocobot_sim.launch.py', 'interbotix_xslocobot_moveit.launch.py' and 'navigation2.launch.py' 
+from the 'interbotix_xslocobot_sim', 'interbotix_xslocobot_moveit' and 'navigation2_bringup' packages.
 """
 
 import os
 import yaml
+from pathlib import Path
+
 
 from ament_index_python.packages import get_package_share_directory
 from interbotix_xs_modules.xs_common import (
@@ -58,37 +58,40 @@ from interbotix_xs_modules.xs_common import (
 from interbotix_xs_modules.xs_launch import (
     construct_interbotix_xslocobot_semantic_robot_description_command
 )
-
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
-    TimerAction,
     GroupAction,
-    OpaqueFunction
+    SetEnvironmentVariable,
+    OpaqueFunction,
+    TimerAction
 )
-from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals
+from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals, IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+
 from launch.substitutions import (
+    EnvironmentVariable,
     LaunchConfiguration,
     PathJoinSubstitution,
     PythonExpression
 )
-
 from launch_ros.actions import (
     Node,
     SetRemap,
-    ComposableNodeContainer,
     LoadComposableNodes,
+    ComposableNodeContainer,
     SetParameter
 )
-
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.descriptions import ParameterFile, ComposableNode
-
 from nav2_common.launch import RewrittenYaml
 
 
+
+"""
+@breif Function to load a YAML file
+"""
 def load_yaml(package_name, file_path):
     package_path = get_package_share_directory(package_name)
     absolute_file_path = os.path.join(package_path, file_path)
@@ -100,11 +103,92 @@ def load_yaml(package_name, file_path):
         return None
 
 
+
+
 """
-@brief Function that launches the nodes
+@breif Function to set the environment variables for Gazebo Simulator
+"""
+def set_env_vars(context, *args, **kwargs):
+    gz_resource_path_env_var = SetEnvironmentVariable(
+        name='GAZEBO_RESOURCE_PATH',
+        value=[
+            EnvironmentVariable('GAZEBO_RESOURCE_PATH', default_value=''),
+            ':',
+            str(Path(
+                FindPackageShare('locobot_control').perform(context)
+            ).resolve())
+        ]
+    )
+
+    gz_model_path_env_var = SetEnvironmentVariable(
+        name='GAZEBO_MODEL_PATH',
+        value=[
+            EnvironmentVariable('GAZEBO_MODEL_PATH', default_value=''),
+            ':',
+            str(Path(
+                FindPackageShare('locobot_control').perform(context)
+            ).resolve()),
+            '/models:',
+        ]
+    )
+
+    gz_media_path_env_var = SetEnvironmentVariable(
+        name='GAZEBO_MEDIA_PATH',
+        value=[
+            EnvironmentVariable('GAZEBO_MEDIA_PATH', default_value=''),
+            ':',
+            str(Path(
+                FindPackageShare('locobot_control').perform(context)
+            ).resolve())
+        ]
+    )
+
+    return [gz_resource_path_env_var, gz_model_path_env_var, gz_media_path_env_var]
+
+
+
+
+
+
+"""
+@brief Function that loads all the nodes
 """
 def launch_description(context, *args, **kwargs):
 
+############################################################################################################
+######################################  GAZEBO CLASSIC SIMULATION  #########################################
+############################################################################################################
+
+    # locobot simulation launch
+    gazebo_simulation_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare("interbotix_xslocobot_sim"), 'launch', 'xslocobot_gz_classic.launch.py'])),
+        launch_arguments={
+            'hardware_type': 'gz_classic',
+            'use_lidar': 'false',
+            'use_rviz': 'false',
+            'use_camera': 'true',
+            'external_urdf_loc': LaunchConfiguration('external_urdf_loc'),
+            'external_srdf_loc': '',
+            'use_gazebo_debug': 'false',
+            'robot_model': 'locobot_wx200',
+            'base_type': 'kobuki',
+            'use_gazebo_verbose': 'false',
+        }.items(),
+    )
+
+    obstacle_model_path = PathJoinSubstitution([FindPackageShare("locobot_control"), 
+                                            'models', 'obstacle', 'model.sdf'])
+
+    spawn_obstacle = Node(
+        condition=LaunchConfigurationEquals('spawn_obstacle', 'true'),
+        package="gazebo_ros",
+        executable="spawn_entity.py",
+        name="spawn_camera_1",
+        arguments=["-entity", "obstacle", "-file", obstacle_model_path, 
+                   '-x', '-0.5', '-y', '0.0', '-z', '0.0',
+                   '-R', '0.0', '-P', '0.0', '-Y', '0.0'],
+        output="screen"
+    )
 ############################################################################################################
 ##############################################  MOVEIT2  ###################################################
 ############################################################################################################
@@ -236,6 +320,17 @@ def launch_description(context, *args, **kwargs):
         output={'both': 'screen'},
     )
 
+    arm_to_sleep_position = Node(
+        package='locobot_control',
+        executable='arm_sleep_position',
+        output='screen',
+        # Remapping is mandatory due to the namespace
+        remappings=[
+            ('/robot_description', '/locobot/robot_description'),
+            ('/robot_description_semantic', '/locobot/robot_description_semantic')
+        ]
+    )
+
 ############################################################################################################
 ############################################  NAVIGATION2  #################################################
 ############################################################################################################
@@ -246,10 +341,10 @@ def launch_description(context, *args, **kwargs):
 
     # Paths to default parameter files
     default_params_mppi = PathJoinSubstitution([
-        FindPackageShare('simulation'), 'config', 'navigation_mppi.yaml'
+        FindPackageShare('locobot_control'), 'config', 'navigation_mppi.yaml'
     ])
     default_params_rpp = PathJoinSubstitution([
-        FindPackageShare('simulation'), 'config', 'navigation_rpp.yaml'
+        FindPackageShare('locobot_control'), 'config', 'navigation_rpp.yaml'
     ])
 
     # Check if param file exists
@@ -275,6 +370,7 @@ def launch_description(context, *args, **kwargs):
         ),
         allow_substs=True,
     )
+
     # Map fully qualified names to relative ones so the node's namespace can be prepended.
     # In case of the transforms (tf), currently, there doesn't seem to be a better alternative
     # https://github.com/ros/geometry2/issues/32
@@ -354,7 +450,7 @@ def launch_description(context, *args, **kwargs):
     nav2_launch = GroupAction(
         actions=[
             # Remap the cmd_vel topic published from 'Controller server' to the diffdrive_controller
-            SetRemap(src='/cmd_vel', dst='/locobot/commands/velocity'),
+            SetRemap(src='/cmd_vel', dst='/locobot/diffdrive_controller/cmd_vel_unstamped'),
             
                 # If an existing container is not provided, start a container and load nodes into it
             ComposableNodeContainer(
@@ -377,65 +473,34 @@ def launch_description(context, *args, **kwargs):
             ),
         ])
 
+
+
 ############################################################################################################
-##########################################  LOCOBOT CONTROL  ###############################################
+############################################  APRILTAG  ####################################################
 ############################################################################################################
 
-    # Load the ROS control launch file
-    ros_control = PathJoinSubstitution(
-            [FindPackageShare('interbotix_xslocobot_ros_control'), 'launch', 'xslocobot_ros_control.launch.py']
-        )
-    
-    ros_control_locobot = IncludeLaunchDescription(
-                PythonLaunchDescriptionSource([ros_control]),
-                launch_arguments={
-                    'use_lidar': 'false',
-                    'use_base': 'true',
-                    'hardware_type': 'actual',
-                    'robot_model': 'locobot_wx200',
-                    'robot_name': 'locobot',
-                    'base_type': 'kobuki',
-                    'external_srdf_loc': '',
-                    'use_camera': 'false', #Camera is loaded externally
-                }.items()
-    )
+    # Include the markers and the relative nodes in the simulation
+    include_markers_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare("locobot_control"),
+                                                         'launch', 'include_markers.launch.py'])),
+        launch_arguments={
+            'camera_number': LaunchConfiguration('camera_number'),
+            'use_gazebo': 'false',
+        }.items()
+    ) 
 
-    # Load realsense2 node into the container
-    # (the configuration file is similar to the one in the 'interbotix_xslocobot_control' package)
-    realsense_params = ParameterFile(
-        RewrittenYaml(
-            source_file=LaunchConfiguration('rs_camera_param'),
-            param_rewrites={},
-            convert_types=True,
-        ),
-        allow_substs=True,
-    )
+############################################################################################################
+############################################  RVIZ  ########################################################
+############################################################################################################
 
-    realsense_node = ComposableNode(
-        package='realsense2_camera',
-        namespace='locobot',
-        plugin='realsense2_camera::RealSenseNodeFactory',
-        name="rs_camera",
-        parameters=[realsense_params],
-        extra_arguments=[{'use_intra_process_comms': True}],
-    )
-  
-    # Create the container for components
-    container = GroupAction(
-        actions=[
-            # Container name not provided, using navigation container
-            LoadComposableNodes(
-                condition=LaunchConfigurationEquals('container', ''),
-                composable_node_descriptions=[realsense_node],
-                target_container='nav2_container',
-            ),
-            # Container name provided, using provided container
-            LoadComposableNodes(
-                condition=LaunchConfigurationNotEquals('container', ''),
-                composable_node_descriptions=[realsense_node],
-                target_container=LaunchConfiguration('container'),
-            ),
-        ]
+    # RViz2 node
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', PathJoinSubstitution([FindPackageShare("locobot_control"), 'rviz', 'navigation.rviz']),
+                   '--ros-args', '--log-level', 'warn'],
+        output='screen'
     )
 
 ############################################################################################################
@@ -444,73 +509,98 @@ def launch_description(context, *args, **kwargs):
 
     state_machine = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory('simulation'), 'launch', 'state_machine.launch.py')
+            os.path.join(get_package_share_directory('locobot_control'), 'launch', 'state_machine.launch.py')
         ),
         launch_arguments={
             'debug': 'true',
-            'use_sim_time': 'false',
+            'use_sim_time': 'true',
         }.items(),
         condition=LaunchConfigurationEquals('state_machine', 'true')
     )
-
+    
 ############################################################################################################
 ############################################  EVENTS HANDLER  ##############################################
 ############################################################################################################
 
-    # Delayed items to have better control over the order of execution
-    delayed_items = TimerAction(
+    # NOTE: This TimerAction gives some time to the spawn entities to create the plugin for the camera in the correct namespace
+    # If the controller of the locobot (in Intebotix_xslocobot_sim) is loadded too early, the camera plugin loaded in the
+    # file 'include_camera.launch.py', will get the namespace of the locobot controller and the apriltag_node will not be able
+    # to find the camera topics
+    wait_spawn_camera_services = TimerAction(
         period=5.0, #Delay in seconds
-        actions=[nav2_launch,
-                container,
-                move_group_node
-        ]
+        actions=[include_markers_launch]
+    )
+
+    # Allow Gazebo to load the simulation before launching MoveIt2 and Navigation2
+    wait_gazebo = TimerAction(
+        period=10.0, #Delay in seconds
+        actions=[move_group_node,
+                    arm_to_sleep_position,
+                    nav2_launch]
     )
 
     launch_state_machine = TimerAction(
-        period=10.0, #Delay in seconds
+        period=15.0, #Delay in seconds
         actions=[state_machine]
     )
 
     return [
         # 'use_sim_time' will be set on all nodes following the line above
-        SetParameter(name='use_sim_time', value=False),
-        # Robot launch
-        ros_control_locobot,
-        delayed_items,
+        SetParameter(name='use_sim_time', value=True),
+        # Environment variables
+        OpaqueFunction(function=set_env_vars),
+        # Simulation launch
+        gazebo_simulation_launch,
+        wait_spawn_camera_services,
+        wait_gazebo,
+        spawn_obstacle,
+        # Rviz launch
+        rviz,
+        # State machine launch
         launch_state_machine
     ]
 
 
 
 
+
+
+
 def generate_launch_description():
-    
     # Declare launch arguments
     nav2_param_file_launch_arg = DeclareLaunchArgument(
-            name='nav2_param_file',
+            'nav2_param_file',
             default_value='',
-            description='the file path to the params YAML file. Default is \'\'.'
+            description='the file path to the navigation params YAML file.'
     )
-
+ 
     external_urdf_loc_launch_arg = DeclareLaunchArgument(
-            name='external_urdf_loc',
-            default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'urdf', 'locobot_tag.urdf.xacro']),
+            'external_urdf_loc',
+            default_value=PathJoinSubstitution([FindPackageShare('locobot_control'), 'urdf', 'locobot_tag.urdf.xacro']),
             description='the file path to the custom URDF file that you would like to include in the Interbotix robot.',
     )
-    
+
+    camera_number_launch_arg = DeclareLaunchArgument(
+            'camera_number',
+            default_value='1',
+            choices=['1', '2'],
+            description='Number of cameras to be included in the simulation. Can be 1 or 2.',
+    )
+
+    spawn_obstacle_launch_arg = DeclareLaunchArgument(
+            'spawn_obstacle',
+            default_value='true',
+            description='Flag to spawn an obstacle in the simulation. Can be true or false.',
+            choices=['true', 'false']
+    )
+
+    # Declare the 'container' launch configuration
     container_arg = DeclareLaunchArgument(
-        name='container',
-        default_value='',
+        name='container', default_value='',
         description=(
             'Name of an existing node container to load launched nodes into. '
             'If unset, a new container will be created.'
         )
-    )
-
-    rs_camera_param_launch_arg = DeclareLaunchArgument(
-        name='rs_camera_param',
-        default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'config', 'rs_camera.yaml']),
-        description='the file path to the Realsense camera configuration file.'
     )
 
     # Set navigation controller launch configuration
@@ -527,13 +617,14 @@ def generate_launch_description():
         description='Select if the state machine should be launched, default is false.'
     )
 
-    return LaunchDescription([
+    return LaunchDescription([    
+        # Launch arguments
         external_urdf_loc_launch_arg,
         nav2_param_file_launch_arg,
-        rs_camera_param_launch_arg,
+        camera_number_launch_arg,
+        spawn_obstacle_launch_arg,
         container_arg,
         controller_arg,
         state_machine_arg,
         # Launch main function
-        OpaqueFunction(function=launch_description)
-    ])
+        OpaqueFunction(function=launch_description)])

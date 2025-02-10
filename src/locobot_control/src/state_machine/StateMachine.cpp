@@ -207,15 +207,15 @@ StateMachine::StateMachine (const rclcpp::NodeOptions & options)
     using namespace std::placeholders;
 
     // Create the last error service
-    get_last_error_ = this->create_service<simulation_interfaces::srv::LastError>(
+    get_last_error_ = this->create_service<locobot_control_interfaces::srv::LastError>(
         "get_last_error", std::bind(&StateMachine::return_last_error, this, _1, _2));
     
     // Create the clear error service
-    clear_error_service_ = this->create_service<simulation_interfaces::srv::ClearError>(
+    clear_error_service_ = this->create_service<locobot_control_interfaces::srv::ClearError>(
         "clear_error_state", std::bind(&StateMachine::clear_error_callback, this, _1, _2));
 
     // Create the control gripper service
-    control_state_service_ = this->create_service<simulation_interfaces::srv::ControlStates>(
+    control_state_service_ = this->create_service<locobot_control_interfaces::srv::ControlStates>(
         "state_control", std::bind(&StateMachine::change_state_callback, this, _1, _2));
 
     // Create the update goal publisher

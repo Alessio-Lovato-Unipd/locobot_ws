@@ -165,18 +165,18 @@ def generate_launch_description():
 
     apriltag_config_file = DeclareLaunchArgument(
         name='apriltag_config_file',
-        default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'config', 'apriltag.yaml']),
+        default_value=PathJoinSubstitution([FindPackageShare('locobot_control'), 'config', 'apriltag.yaml']),
         description='Full path to the apriltag configuration file to use'
     )
 
     kinect_config_file = DeclareLaunchArgument(
         name='kinect_config_file',
-        default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'config', 'kinect.yaml']),
+        default_value=PathJoinSubstitution([FindPackageShare('locobot_control'), 'config', 'kinect.yaml']),
         description='Full path to the kinect configuration file to use'
     )
 
     second_camera = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare("simulation"), 'launch', 'second_kinect.launch.py'])),
+        PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare("locobot_control"), 'launch', 'second_kinect.launch.py'])),
         condition=LaunchConfigurationEquals('camera_number', '2')
     )
 

@@ -4,7 +4,7 @@ from launch import LaunchDescription
 def generate_launch_description():
     
     demo = Node(
-        package='simulation',
+        package='locobot_control',
         executable='demo',
         output='screen',
        # namespace='locobot',

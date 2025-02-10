@@ -12,20 +12,11 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, TextSubstitution
 
-def load_yaml(context, *args, **kwargs):
-    absolute_file_path = LaunchConfiguration('kinect_config_file').perform(context)
-    try:
-        with open(absolute_file_path, 'r') as file:
-            return yaml.safe_load(file)
-    except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
-        return None
-
 def setup_nodes(context, *args, **kwargs):
     # Load the kinect configuration file
-    kinect_params = load_yaml(context)
     camera_namespace = "k01"
     kinect_node_params = {
-        'sensor_sn': 'a000181401712',  # Serial number of the camera 'k02'
+        'sensor_sn': 'a000191301712',  # Serial number of the camera 'k01'
         'depth_enabled': True,  # If set to false, the depth frame is rotated wrongly
         'rgb_point_cloud': False,
         'color_enabled': True,
@@ -80,7 +71,7 @@ def setup_nodes(context, *args, **kwargs):
     # If an existing container is not provided, start a container and load nodes into it
     apriltag_container = ComposableNodeContainer(
         condition=LaunchConfigurationEquals('container', ''),
-        name='apriltag_container',
+        name='apriltag_container_2',
         namespace=camera_namespace,
         package='rclcpp_components',
         executable='component_container',
@@ -117,19 +108,12 @@ def generate_launch_description():
 
     apriltag_config_file = DeclareLaunchArgument(
         name='apriltag_config_file',
-        default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'config', 'apriltag.yaml']),
+        default_value=PathJoinSubstitution([FindPackageShare('locobot_control'), 'config', 'apriltag.yaml']),
         description='Full path to the apriltag configuration file to use'
-    )
-
-    kinect_config_file = DeclareLaunchArgument(
-        name='kinect_config_file',
-        default_value=PathJoinSubstitution([FindPackageShare('simulation'), 'config', 'kinect2.yaml']),
-        description='Full path to the kinect configuration file to use'
     )
 
     ld.add_action(arg_container)
     ld.add_action(apriltag_config_file)
-    ld.add_action(kinect_config_file)
     ld.add_action(OpaqueFunction(function=setup_nodes))
 
     return ld

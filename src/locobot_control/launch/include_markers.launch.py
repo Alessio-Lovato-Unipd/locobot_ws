@@ -60,7 +60,7 @@ def generate_launch_description():
     include_camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([
-                FindPackageShare('simulation'), 'launch', 'include_camera.launch.py'])
+                FindPackageShare('locobot_control'), 'launch', 'include_camera.launch.py'])
         ),
         launch_arguments={
             'camera_number': LaunchConfiguration('camera_number'),
@@ -75,7 +75,7 @@ def generate_launch_description():
             plugin='AprilTagNode',
             name='apriltag_node_1',
             parameters=[PathJoinSubstitution([
-                FindPackageShare('simulation'), 'config', 'apriltag.yaml']
+                FindPackageShare('locobot_control'), 'config', 'apriltag.yaml']
             )],
             remappings=[('/camera_info', '/locobot/env_camera_1/camera_info'),
                         ('/image', '/locobot/env_camera_1/image_raw')],
@@ -86,7 +86,7 @@ def generate_launch_description():
             plugin='AprilTagNode',
             name='apriltag_node_2',
             parameters= [PathJoinSubstitution([
-                FindPackageShare('simulation'), 'config', 'apriltag.yaml']
+                FindPackageShare('locobot_control'), 'config', 'apriltag.yaml']
             )],
             remappings=[('/camera_info', '/locobot/env_camera_2/camera_info'),
                         ('/image', '/locobot/env_camera_2/image_raw')],

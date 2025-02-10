@@ -21,7 +21,7 @@ setup(
                       'mediapipe',
                       'cv_bridge',
                       'realsense2_camera',
-                      'simulation_interfaces'],
+                      'locobot_control_interfaces'],
     zip_safe=True,
     maintainer='alessio',
     maintainer_email='alessio.lovato.1@studenti.unipd.it',

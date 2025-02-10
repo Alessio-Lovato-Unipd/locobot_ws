@@ -14,7 +14,7 @@
 
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
-  <depend>simulation_interfaces</depend>
+  <depend>locobot_control_interfaces</depend>
   <depend>cv_bridge</depend>
 
   <export>

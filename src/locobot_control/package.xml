@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>simulation</name>
+  <name>locobot_control</name>
   <version>0.1.0</version>
   <description>This package contains the code to run the LoCoBot WX200 both in simulation and real world</description>
   <maintainer email="alessio.lovato.1@studenti.unipd.it">alessio</maintainer>

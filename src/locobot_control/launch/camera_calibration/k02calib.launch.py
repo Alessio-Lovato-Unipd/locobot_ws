@@ -26,10 +26,10 @@ def generate_launch_description():
     info_topic = 'rgb/camera_info'
 
     tag_config = os.path.join(
-        get_package_share_directory('simulation'), 'config/camera_calibration', 'tags_36h11_all.yaml'
+        get_package_share_directory('locobot_control'), 'config/camera_calibration', 'tags_36h11_all.yaml'
     )
     tags = os.path.join(
-        get_package_share_directory('simulation'), 'config/camera_calibration', camera + '_tags.yaml'
+        get_package_share_directory('locobot_control'), 'config/camera_calibration', camera + '_tags.yaml'
     )
     tag_node = ComposableNode(
             name=['apriltag'],
@@ -55,7 +55,7 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(
-                        get_package_share_directory('simulation'),
+                        get_package_share_directory('locobot_control'),
                         'launch/camera_calibration/k4a.launch.py'
                     )
                 ),

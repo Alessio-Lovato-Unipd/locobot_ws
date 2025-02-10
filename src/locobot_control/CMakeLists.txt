@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(simulation)
+project(locobot_control)
 
 set (CMAKE_CXX_STANDARD 17)
 
@@ -24,7 +24,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(tf2_ros REQUIRED)
-find_package(simulation_interfaces REQUIRED)
+find_package(locobot_control_interfaces REQUIRED)
 
 
 #moveit dependencies
@@ -67,7 +67,7 @@ ament_target_dependencies(state_machine_component
                               "moveit_core"
                               "moveit_ros_planning_interface"
                               "moveit_msgs"
-                              "simulation_interfaces")
+                              "locobot_control_interfaces")
 
 rclcpp_components_register_node(state_machine_component PLUGIN "StateMachine" EXECUTABLE state_machine)
 install(TARGETS state_machine_component

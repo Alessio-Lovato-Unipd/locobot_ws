@@ -40,8 +40,8 @@ def launch_gazebo(context):
     if LaunchConfigurationEquals('use_gazebo', 'true').evaluate(context):
         # Define Gazebo classic environment variables (necessary for the models to be found)
         # Theese variables are necessary for the models and has to be set before the gazebo launch
-        resources = os.path.join(get_package_share_directory('simulation'))
-        models = os.path.join(get_package_share_directory('simulation'), 'models')
+        resources = os.path.join(get_package_share_directory('locobot_control'))
+        models = os.path.join(get_package_share_directory('locobot_control'), 'models')
         
         if 'GAZEBO_RESOURCE_PATH' in os.environ:
             resources_path =  os.environ['GAZEBO_RESOURCE_PATH'] + ':' + resources
@@ -94,7 +94,7 @@ def generate_launch_description():
     )
 
     # Get the path to the gazebo_ros package
-    camera_model_path = PathJoinSubstitution([FindPackageShare("simulation"), 
+    camera_model_path = PathJoinSubstitution([FindPackageShare("locobot_control"), 
                                               'models', 'camera_1', 'model.sdf'])
 
     # Create the camera entities
@@ -103,7 +103,7 @@ def generate_launch_description():
         executable="spawn_entity.py",
         name="spawn_camera_1",
         arguments=["-entity", "env_camera_1", "-file", camera_model_path, 
-                   '-x', '0.0', '-y', '1.0', '-z', '3.0',
+                   '-x', '1.0', '-y', '0.0', '-z', '3.5',
                    '-R', '0.0', '-P', '0.0', '-Y', '0.0'],
         output="screen"
     )
@@ -112,15 +112,15 @@ def generate_launch_description():
     tf_camera_1 = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
-        arguments = ['--x', '1.0', '--y', '0.0', '--z', '3.0',
-                     '--yaw', '-1.57079632', '--pitch', '0.0','--roll', '-3.14159265', 
+        arguments = ['--x', '0.0', '--y', '1.0', '--z', '3.5',
+                     '--roll', '-3.14159265', '--pitch', '0.0', '--yaw', '-1.5707',
                      '--frame-id', 'env_camera_1_frame',
                      '--child-frame-id', 'map'],
         output='screen'
     )
 
     # Get the path to the model of the second camera
-    camera_model_path = PathJoinSubstitution([FindPackageShare("simulation"), 
+    camera_model_path = PathJoinSubstitution([FindPackageShare("locobot_control"), 
                                               'models', 'camera_2', 'model.sdf'])
 
     # Create the group action to spawn the second camera
@@ -133,7 +133,7 @@ def generate_launch_description():
                 executable="spawn_entity.py",
                 name="spawn_camera_2",
                 arguments=["-entity", "env_camera_2", "-file", camera_model_path, 
-                        '-x', '-2.0', '-y', '3.2', '-z', '3.0',
+                        '-x', '3.0', '-y', '0.0', '-z', '3.5',
                         '-R', '0.0', '-P', '0.0', '-Y', '0.0'],
                 output="screen",
             ),
@@ -142,7 +142,7 @@ def generate_launch_description():
             Node(
                 package="tf2_ros",
                 executable="static_transform_publisher",
-                arguments = ['--x', '2.2', '--y', '-2.0', '--z', '0.0',
+                arguments = ['--x', '0.0', '--y', '2.0', '--z', '0.0',
                              '--yaw', '0.0', '--pitch', '0','--roll', '0', 
                              '--frame-id', 'env_camera_2_frame',
                              '--child-frame-id', 'env_camera_1_frame'],

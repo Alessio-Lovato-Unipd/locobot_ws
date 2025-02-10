@@ -11,7 +11,7 @@ from interbotix_xs_modules.xs_launch import (
 def generate_launch_description():
 
     arm_sleep_position = Node(
-        package='simulation',
+        package='locobot_control',
         executable='arm_sleep_position',
         output='screen',
        # namespace='locobot',

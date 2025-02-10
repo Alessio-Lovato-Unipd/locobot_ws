@@ -47,7 +47,7 @@ The gesture recognition node (`gesture_recognizer_node`) recognizes gestures usi
   - `minimum_score` (default: `0.6`): The minimum score to consider a gesture.
   - `service_name` (default: `state_control`): The name of the service to connect with
 - **Services**:
-  - `state_control`: The service used to send the recognized gestures as commands to the robot. This can be changed using the `service_name` parameter. Must be a `simulation_interfaces::srv::ControlStates` service type.
+  - `state_control`: The service used to send the recognized gestures as commands to the robot. This can be changed using the `service_name` parameter. Must be a `locobot_control_interfaces::srv::ControlStates` service type.
 
 ### Recognized Gestures
 
@@ -91,7 +91,7 @@ source install/setup.bash
 - `opencv-python`
 - `mediapipe`
 - `realsense2_camera`
-- `simulation_interfaces`
+- `locobot_control_interfaces`
 
 ## Maintainer
 

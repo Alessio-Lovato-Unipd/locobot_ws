@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(simulation_interfaces)
+project(locobot_control_interfaces)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -23,7 +23,6 @@ endif()
 
 #install custom interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "action/StateMachine.action"
   "srv/LastError.srv"
   "srv/ClearError.srv"
   "srv/ControlGripper.srv"

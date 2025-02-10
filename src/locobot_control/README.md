@@ -1,4 +1,4 @@
-# Locobot Simulation Package
+# Locobot Control Package
 
 ## Overview
 
@@ -46,10 +46,9 @@ The package is organized into the following directories:
 - `include_camera.launch.py`: Launch file for including the camera in the simulation.
 - `include_markers.launch.py`: Launch file for including the AprilTag markers in the simulation.
 - `remote.launch.py`: Launch file for running Rviz2 interface, apriltag detection and kinect connection on a remote machine (not the NUC).
-- `robot.launch.py`: Launch file to bring up MoveIt2, Nav2, and the Locobot control node on the NUC, as well as the realsense camera.
+- `robot.launch.py`: Launch file to bring up the required packages in the NUC of the Locobot.
 - `second_camera.launch.py`: Launch file to include marker detection from a second kinect camera in the camera network.
 - `simulation.launch.py`: Launch file for running the simulation.
-- `state_machine.launch.py`: Launch file for running the state machine node.
 
 
 > **Note:** The `camera_calibration` folder contains launch files for calibrating the camera network using the `camera_calibration` package.
@@ -60,6 +59,7 @@ The package is organized into the following directories:
 
 - `state_machine/HumanEmulator.cpp`: Implements the `HumanEmulator` class, a ROS 2 node that emulates human behavior for simulation purposes.
 - `state_machine/StateMachine.cpp`: Implements the `StateMachine` class, responsible for controlling the different states of the robot behavior.
+- `state_machine/main.cpp`: Main file for the `StateMachine` class. Implements the main loop for the state machine.
 - `ArmSleepPosition.cpp`: A demo file for the `LocobotControl` class that sends the robot's arm to the sleep position.
 - `Demo.cpp`: A demo file for the `LocobotControl` class that demonstrates moving the base, arm, and gripper to specified positions.
 - `LocobotControl.cpp`: Implements the `LocobotControl` class, responsible for controlling the Locobot arm, gripper, and base.
@@ -122,7 +122,7 @@ The `LocobotControl` class is a ROS 2 node responsible for controlling the Locob
 
 ### StateMachine Class
 
-The `StateMachine` class is a ROS 2 node that controls the different states of the robot behavior. It uses a state machine to manage the robot's actions, such as navigating to a goal, interacting with objects, and handling errors. The state machine is designed to be used by another node to control the robot's behavior via the provided services. It inherits from the `LocobotControl` class to control the robot's arm, gripper, and base.
+The `StateMachine` class is a ROS 2 node that controls the different states of the robot behavior. It uses a state machine to manage the robot's actions, such as navigating to a goal, interacting with objects, and handling errors. The state machine is designed to be used by another node to control the robot's behavior via the provided services.
 
 #### Parameters
 
@@ -142,15 +142,15 @@ The `StateMachine` node provides several services to control and monitor its beh
 
 - **Control States Service**: This service allows changing the state of the machine to IDLE, NAVIGATION, INTERACTION, or ABORT.
   - Service name: `/state_control`
-  - Service type: `simulation_interfaces/srv/ControlStates`
+  - Service type: `locobot_control_interfaces/srv/ControlStates`
 
 - **Clear Error Service**: This service clears the error or aborted state and message error. The machine will enter the IDLE state if possible.
   - Service name: `/clear_error_state`
-  - Service type: `simulation_interfaces/srv/ClearError`
+  - Service type: `locobot_control_interfaces/srv/ClearError`
 
 - **Last Error Service**: This service returns the last error message and state of the state machine.
   - Service name: `/get_last_error`
-  - Service type: `simulation_interfaces/srv/LastError`
+  - Service type: `locobot_control_interfaces/srv/LastError`
 
 #### Internal and External States
 
@@ -173,7 +173,7 @@ The internal states of the state machine are as follows:
 - `ABORT`: The machine is aborted.
 - `STOPPING`: The machine is stopping.
 
-![Internal States](images/internal_states.svg)
+![Internal States](internal_states.svg)
 
 **External States**
 
@@ -184,33 +184,21 @@ The external states of the state machine are as follows:
 - `RUNNING`: The machine is still running.
 - `INITIALIZED`: The machine has been initialized.
 
-![External States](images/external_states.svg)
+![External States](external_states.svg)
 
 #### Safety Precautions
 The state machine start the robot in the ERROR state. This is to prevent the robot from moving unexpectedly. To start the robot, the state must be switched to the IDLE state using the `\clear_error_state` service:
 
 ```bash
-ros2 service call /clear_error_state simulation_interfaces/srv/ClearError
+ros2 service call /clear_error_state locobot_control_interfaces/srv/ClearError
 ```
-Furthermore, the state machine will automatically switch to the ERROR state if the TF of robot or human is not available for a certain amount of time. This is to prevent the robot from moving when the TF is not available.
+
 
 ## Launch Files
 
-### state_machine.launch.py
-This launch file is used to launch the state machine node.
-
-**Input Arguments:**
-- `debug`: Flag to publish the internal state of the machine. Can be *true* or *false*. (default: *true*)
-- `tf_tolerance`: Time tolerance [s] for missing TFs before triggering an error. (default: *5.0*)
-- `human_following`: Flag to indicate if the human should be followed after the first position. Can be *true* or *false*. (default: *true*)
-
-> **Note:** The `state_machine.launch.py` launch file can be modified to include the all the arguments required for the `StateMachine` class.
-
 ### simulation.launch.py
 
-This launch file is used to launch a complete simulation of the Locobot using Gazebo Classic. To control the robot behavior, the state machine can be included by setting the `state_machine` argument to *true*.
-Otherwise the *LocobotControl* class can be used to control the robot manually or creating another script.
-If the `nav2_param_file` is not set, the default file for navigation will be selected basing on the `nav_controller` argument.
+This launch file is used to launch a complete simulation of the Locobot using Gazebo Classic.
 
 **Input Arguments:**
 - `nav2_param_file`: The file path to the params YAML file of Nav2. (default: '')
@@ -219,30 +207,6 @@ If the `nav2_param_file` is not set, the default file for navigation will be sel
 - `spawn_obstacle`: Flag to spawn an obstacle in the simulation. Can be *true* or *false*. (default: *true*)
 - `container`: Name of the container where to load the components. Default is *nav2_container*.
 - `nav_controller`: The Nav2 controller plugin to use. Can be *mppi* or *rpp*. (default: *mppi*)
-- `state_machine`: Flag to include the state machine. Can be *true* or *false*. (default: *false*)
-
-### robot.launch.py
-
-This launch file is used to bring up the required packages in the NUC of the Locobot. To control the robot behavior, the state machine can be included by setting the `state_machine` argument to *true*. Otherwise the *LocobotControl* class can be used to control the robot manually or creating another script.
-If the `nav2_param_file` is not set, the default file for navigation will be selected basing on the `nav_controller` argument.
-
-**Input Arguments:**
-- `external_urdf_loc`: The file path to the custom URDF file to include in the Interbotix robot. (default: *urdf/locobot_tag.urdf.xacro*)
-- `nav2_param_file`: The file path to the params YAML file. (default: ``)
-- `rs_camera_param`: The file path to the Realsense camera configuration file. (default: *rs_camera.yaml*)
-- `container`: Name of an existing node container to load launched nodes into. If unset, a new container will be created for the apriltag detections.
-- `nav_controller`: The controller plugin to be used in Nav2. Can be *mppi* or *rpp*. (default: *mppi*)
-- `state_machine`: Flag to include the state machine. Can be *true* or *false*. (default: *false*)
-
-### remote.launch.py
-
-This launch file is used to launch the simulation environment with the Azure Kinect camera and the apriltag node. Not to be used on the NUC but on a remote machine connected to the kinect camera network.
-
-**Input Arguments:**
-- `container`: Name of an existing node container to load launched nodes into. If unset, a new container will be created for the apriltag detections.
-- `only_camera`: If set to `true`, only the camera and apriltag node will be launched.
-- `apriltag_config_file`: Full path to the apriltag configuration file to use.
-- `kinect_config_file`: Full path to the kinect configuration file to use.
 
 ### second_kinect.launch.py
 
@@ -250,6 +214,27 @@ This launch file is used to launch the apriltag detection node with a second kin
 
 **Input Arguments:**
 - `container`: Name of an existing node container to load launched nodes into. If unset, a new container will be created.
+- `apriltag_config_file`: Full path to the apriltag configuration file to use.
+- `kinect_config_file`: Full path to the kinect configuration file to use.
+
+### robot.launch.py
+
+This launch file is used to bring up the required packages in the NUC of the Locobot. If the `nav2_param_file` is not set, the default file for navigation will be selected basing on the `nav_controller` argument.
+
+**Input Arguments:**
+- `external_urdf_loc`: The file path to the custom URDF file to include in the Interbotix robot. (default: *urdf/locobot_tag.urdf.xacro*)
+- `nav2_param_file`: The file path to the params YAML file. (default: ``)
+- `rs_camera_param`: The file path to the Realsense camera configuration file. (default: *rs_camera.yaml*)
+- `container`: Name of an existing node container to load launched nodes into. If unset, a new container will be created for the apriltag detections.
+- `nav_controller`: The controller plugin to be used in Nav2. Can be *mppi* or *rpp*. (default: *mppi*)
+
+### remote.launch.py
+
+This launch file is used to launch the remote environment with the Azure Kinect camera, the apriltag node and . Not to be used on the NUC but on a remote machine connected to the kinect camera network.
+
+**Input Arguments:**
+- `container`: Name of an existing node container to load launched nodes into. If unset, a new container will be created for the apriltag detections.
+- `only_camera`: If set to `true`, only the camera and apriltag node will be launched.
 - `apriltag_config_file`: Full path to the apriltag configuration file to use.
 - `kinect_config_file`: Full path to the kinect configuration file to use.
 
@@ -284,17 +269,11 @@ This launch file is used to send the robot's arm to the sleep position.
 **Input Arguments:**
 - None
 
-## Executables available
-The following executables are available in the package, but it is recommended to use the launch files to start the nodes (see *Warning* section below).
-- `demo`: A demo program for the Locobot.
-- `arm_sleep_position`: Sends the robot's arm to the sleep position.
-- `state_machine`: Controls the different states of the robot behavior. Note that the state machine is also registered as a component (*state_machine_component*).
-
 ## Warning
 
 ### Topic Remapping
 
-To use the `LocobotControl` and `StateMachine` class, it is necessary to remap the topics as shown in the [demo_no_lidar.launch.py](launch/demo_no_lidar.launch.py) file. This is because Interbotix publishes the robot descriptions on specific topics.
+To use the `LocobotControl` class, it is necessary to remap the topics as shown in the [demo_no_lidar.launch.py](launch/demo_no_lidar.launch.py) file. This is because Interbotix publishes the robot descriptions on specific topics.
 
 ### Stop Interface
 The stop interface for MoveIt2 in the state machine has been commented out in the code because it exhibits unexpected behavior when used with the real robot. An issue should be opened in the Interbotix package repository to address this problem.
