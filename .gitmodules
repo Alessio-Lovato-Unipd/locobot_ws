@@ -40,3 +40,9 @@
 [submodule "src/apriltag_ros"]
 	path = src/apriltag_ros
 	url = https://github.com/Adlink-ROS/apriltag_ros.git
+[submodule "apriltag_calibration"]
+	path = apriltag_calibration
+	url = https://github.com/mguidolin/apriltag_calibration.git
+[submodule "src/apriltag_calibration"]
+	path = src/apriltag_calibration
+	url = https://github.com/mguidolin/apriltag_calibration.git

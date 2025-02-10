@@ -173,7 +173,7 @@ The internal states of the state machine are as follows:
 - `ABORT`: The machine is aborted.
 - `STOPPING`: The machine is stopping.
 
-![Internal States](internal_states.svg)
+![Internal States](images/internal_states.svg)
 
 **External States**
 
@@ -184,7 +184,7 @@ The external states of the state machine are as follows:
 - `RUNNING`: The machine is still running.
 - `INITIALIZED`: The machine has been initialized.
 
-![External States](external_states.svg)
+![External States](images/external_states.svg)
 
 #### Safety Precautions
 The state machine start the robot in the ERROR state. This is to prevent the robot from moving unexpectedly. To start the robot, the state must be switched to the IDLE state using the `\clear_error_state` service:
