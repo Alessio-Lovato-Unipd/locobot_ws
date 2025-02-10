@@ -150,7 +150,7 @@ To do so, follow these steps:
 
     - In the first terminal, launch the Locobot control:
         ```bash
-        ros2 launch locobot_control robot.launch.py
+        ros2 launch locobot_control robot.launch.py state_machine:=true
         ```
 
     - In the second terminal, launch the gesture_recognition node:
