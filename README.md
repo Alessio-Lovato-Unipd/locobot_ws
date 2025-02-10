@@ -3,7 +3,7 @@
 This repository contains the workspace to control the LoCoBot WX200 with a Kobuki base, an open-source robot developed by [Interbotix](https://www.interbotix.com).<br>
 It includes all the necessary ROS packages to operate the robot and is intended to be installed on the onboard NUC with an Ubuntu 22.04 distribution.
 
-> **NOTE: This package is intended to be used with the CycloneDDS as suggested by Nav2. For this reason the 'image_proc' package is not able to stream out the rectified image and thus the raw image is used.
+> **NOTE**: This package is intended to be used with the CycloneDDS as suggested by Nav2. For this reason the 'image_proc' package is not able to stream out the rectified image and thus the raw image is used.
 
 ## Prerequisites
 
