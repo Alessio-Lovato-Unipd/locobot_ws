@@ -20,6 +20,11 @@ import yaml
 def generate_launch_description():
     ld = LaunchDescription()
 
+    camera_sn = DeclareLaunchArgument(
+        'cam_sn', default_value='a000191301712',
+        description='Serial number of the camera, with \'a\' as prefix'  # 'k02'
+    )
+
     camera = 'k02'
 
     image_topic = 'rgb/image_rect'
@@ -71,7 +76,7 @@ def generate_launch_description():
                     'rgb_point_cloud': 'true',
                     'point_cloud_in_depth_frame': 'true',
                     'required': 'false',
-                    'sensor_sn': 'a000071601712',
+                    'sensor_sn': LaunchConfiguration('cam_sn'),
                     'recording_file': '""',
                     'recording_loop_enabled': 'false',
                     'body_tracking_enabled': 'false',
@@ -87,6 +92,7 @@ def generate_launch_description():
         ]
     )
 
+    ld.add_action(camera_sn)
     ld.add_action(tag_container)
     ld.add_action(launch_include_with_namespace)
 

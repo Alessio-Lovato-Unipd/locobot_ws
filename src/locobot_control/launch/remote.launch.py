@@ -4,14 +4,18 @@
 @brief This file is used to launch the simulation environment with the Azure Kinect camera and the apriltag node.
 
 @details The launch file will start the Azure Kinect ROS driver, the image_proc node, the apriltag node, and the RViz2 node. The apriltag node will detect the apriltags in the camera feed and publish the pose of the detected tags.
-The RViz2 node will display the camera feed and the detected apriltags. If the 'only_camera' argument is set to 'true', only the camera and apriltag node will be launched.
+The RViz2 node will display the camera feed and the detected apriltags.
 
 @note The apriltag node is a composable node that is loaded into a container. The container is created if the 'container' argument is not set. If the 'container' argument is set, the apriltag node is loaded into the existing container.
 
 @param container: Name of an existing node container to load launched nodes into. If unset, a new container will be created.
-@param only_camera: If set to 'true', only the camera and apriltag node will be launched.
 @param apriltag_config_file: Full path to the apriltag configuration file to use.
 @param kinect_config_file: Full path to the kinect configuration file to use.
+@param camera_number: Select the number of cameras to launch. Default is 1.
+@param cam_sn: Serial number of the camera k01, with \'a\' as prefix. Default is a000181401712.
+@param cam2_sn: Serial number of the camera k02, with \'a\' as prefix. Default is a000191301712.
+
+@note cam2_sn is used only if camera_number = 2. The second camera is launched using the second_kinect.launch.py launch file.
 
 """
 
@@ -40,9 +44,9 @@ def load_yaml(context, *args, **kwargs):
 def setup_nodes(context, *args, **kwargs):
     # Load the kinect configuration file
     kinect_params = load_yaml(context)
-    camera_namespace = "k02"
+    camera_namespace = "k01"
     kinect_node_params = {
-        'sensor_sn': 'a000181401712',  # Serial number of the camera 'k02'
+        'sensor_sn': LaunchConfiguration('cam_sn'),  # Serial number of the camera 'k01'
         'depth_enabled': True,  # If set to false, the depth frame is rotated wrongly
         'rgb_point_cloud': False,
         'color_enabled': True,
@@ -130,7 +134,7 @@ def setup_nodes(context, *args, **kwargs):
         package='rviz2',
         executable='rviz2',
         name='rviz2',
-        arguments=['-d', PathJoinSubstitution([FindPackageShare("simulation"), 'rviz', 'navigation.rviz']),
+        arguments=['-d', PathJoinSubstitution([FindPackageShare("locobot_control"), 'rviz', 'navigation.rviz']),
                    '--ros-args', '--log-level', 'warn'],
         parameters=[{'use_sim_time': True}],
         output='screen'
@@ -175,12 +179,27 @@ def generate_launch_description():
         description='Full path to the kinect configuration file to use'
     )
 
+    camera_sn_arg = DeclareLaunchArgument(
+        name='cam_sn', default_value='a000181401712',
+        description='Serial number of the camera k01, with \'a\' as prefix'
+    )
+
+    camera_2_sn_arg = DeclareLaunchArgument(
+        name='cam2_sn', default_value='a000191301712',
+        description='Serial number of the camera k02, with \'a\' as prefix'
+    )
+
     second_camera = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare("locobot_control"), 'launch', 'second_kinect.launch.py'])),
-        condition=LaunchConfigurationEquals('camera_number', '2')
+        condition=LaunchConfigurationEquals('camera_number', '2'),
+        launch_arguments={
+            'cam_sn': LaunchConfiguration('cam2_sn')
+        }
     )
 
     ld.add_action(arg_container)
+    ld.add_action(camera_sn_arg)
+    ld.add_action(camera_2_sn_arg)
     ld.add_action(camera_number_arg)
     ld.add_action(apriltag_config_file)
     ld.add_action(kinect_config_file)

@@ -22,11 +22,12 @@ The installation process is divided into two parts: the Locobot and the remote l
 
 > **Note:** Before installing, please make sure both the Locobot and the remote laptop are connected to the same network. Furthermore, it is preferable to have a static IP for the Locobot (i.e. 192.168.0.5).
 
+> **Warning:** apriltag_calibration is a private submodule. Please make sure to have the correct permissions to access it before installing the workspace. Also, Make sure that your git configuration is set up correctly in the terminals you are using to clone the repository.
 
 1. Clone the repository:
 
     ```bash
-    git clone https://github.com/Alessio-Lovato-Unipd/locobot_ws.git
+    git clone https://github.com/AlessioLovato/locobot_ws.git
     # Move to the workspace
     cd locobot_ws/
     ```
@@ -106,6 +107,13 @@ Before using the Kinect cameras, it is necessary to calibrate them.
 
 To do so, follow these steps:
 
+0. Set the kinect cameras and the apriltag markers (family 36h11) on the floor. Make sure the markers are visible from all the cameras and that the cameras are correctly connected to the USB ports. Tag_id 0 is set as the origin of the map, while markers from 1 to 9 (except 3,4) are used to calibrate the cameras.
+Coordinate system (right-hand coordinate system) is defined as follows:
+    - X: to the right of the marker
+    - Y: to the top of the marker
+    - Z: exit from the marker
+Only the tag_id 0 placement is important, the others can be placed randomly as they're used only to calibrate the cameras position.
+
 1. Make sure to change all the launch file parameters in the calibration folder with the correct values for the kinect serial number and the camera roots.
 
     > **Note:** The calibration process won't start until all the root frames specified by the calib_master are found. Make sure to have all the kinect launch files publishing before starting the calibration and that the frames are correctly named as in the other launch files of the camera_calibration folder.
@@ -120,6 +128,8 @@ To do so, follow these steps:
     ```bash
     ros2 launch locobot_control k01calib.launch.py
     ```
+    > **Note:** The kinect calibration launch file allows to set the serial number of the kinect camera. See the [README](src/locobot_control/README.md) in the locobot_control package for more information.
+
 4. Open a new terminal and launch the calibration master:
     ```bash
     ros2 launch locobot_control calib_master.launch.py
@@ -160,8 +170,12 @@ To do so, follow these steps:
 
 5. In the third terminal, launch the remote visualization and apriltag detection:
     ```bash
+    # To launch only k02 camera
     ros2 launch locobot_control remote.launch.py
+    # To launch all the cameras (k01, k02)
+    ros2 launch locobot_control remote.launch.py camera_number:=2
     ```
+    > **Note:** The remote launch file allows to set the camera number to visualize and the serial number of the kinect cameras. See the [README](src/locobot_control/README.md) in the locobot_control package for more information.
 
 6. Follow the instructions in the gesture recognition README to understand how to use the gestures.
 
@@ -199,7 +213,7 @@ The repository includes the following submodules:
 - [kobuki_ros_interfaces](https://github.com/kobuki-base/kobuki_ros_interfaces.git) - branch: release/1.0.x
 - [ecl_core](https://github.com/stonier/ecl_core.git) - branch: release/1.2.x
 - [ecl_lite](https://github.com/stonier/ecl_lite.git) - branch: release/1.2.x
-- [sophus](https://github.com/clalancette/sophus.git) - branch: clalancette/fix-compiler-error
+- [sophus](https://github.com/clalancette/sophus.git) - from apt package in install script
 - [Azure_Kinect_ROS_Driver](https://github.com/mguidolin/Azure_Kinect_ROS_Driver.git) - branch: fix
 - [apriltag_ros](https://github.com/Adlink-ROS/apriltag_ros.git) - branch: foxy-devel
 - [apriltag_calibration](https://github.com/mguidolin/apriltag_calibration.git) - branch: ros2-humble

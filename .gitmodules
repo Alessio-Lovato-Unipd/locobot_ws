@@ -30,10 +30,6 @@
 	path = src/ecl_lite
 	url = https://github.com/stonier/ecl_lite.git
 	branch = release/1.2.x
-[submodule "src/sophus"]
-	path = src/sophus
-	url = https://github.com/clalancette/sophus.git
-	branch = clalancette/fix-compiler-error
 [submodule "src/Azure_Kinect_ROS_Driver"]
 	path = src/Azure_Kinect_ROS_Driver
 	url = https://github.com/mguidolin/Azure_Kinect_ROS_Driver.git

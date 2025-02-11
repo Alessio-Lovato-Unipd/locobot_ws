@@ -14,9 +14,9 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Text
 
 def setup_nodes(context, *args, **kwargs):
     # Load the kinect configuration file
-    camera_namespace = "k01"
+    camera_namespace = "k02"
     kinect_node_params = {
-        'sensor_sn': 'a000191301712',  # Serial number of the camera 'k01'
+        'sensor_sn': LaunchConfiguration('cam_sn'), # Serial number of the camera 'k02'
         'depth_enabled': True,  # If set to false, the depth frame is rotated wrongly
         'rgb_point_cloud': False,
         'color_enabled': True,
@@ -112,8 +112,14 @@ def generate_launch_description():
         description='Full path to the apriltag configuration file to use'
     )
 
+    camera_sn_arg = DeclareLaunchArgument(
+        name='cam_sn', default_value='a000191301712',
+        description='Serial number of the camera k02'
+    )
+
     ld.add_action(arg_container)
     ld.add_action(apriltag_config_file)
+    ld.add_action(camera_sn_arg)
     ld.add_action(OpaqueFunction(function=setup_nodes))
 
     return ld

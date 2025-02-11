@@ -7,7 +7,7 @@ sudo apt-get install ssh -y
 
 # Add CycloneDDS export to bashrc
 echo "Adding CycloneDDS export to bashrc"
-sudo apt-get install ros-humble-cyclonedds -y
+sudo apt-get install ros-humble-cyclonedds ros-humble-sophus -y
 echo "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" >> ~/.bashrc
 source ~/.bashrc
 
@@ -24,9 +24,9 @@ rosdep install --from-paths src --ignore-src -r -y
 # Build packages
 echo "Building packages"
 source /opt/ros/humble/setup.bash
-colcon build --packages-select sophus locobot_control_interfaces
+colcon build --packages-select locobot_control_interfaces
 source install/setup.bash
-colcon build --packages-skip sophus azure_kinect_ros_driver --parallel-workers 6
+colcon build --packages-skip azure_kinect_ros_driver --parallel-workers 6
 source install/setup.bash
 
 echo "Building completed"

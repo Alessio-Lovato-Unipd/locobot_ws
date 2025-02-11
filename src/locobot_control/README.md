@@ -216,6 +216,7 @@ This launch file is used to launch the apriltag detection node with a second kin
 - `container`: Name of an existing node container to load launched nodes into. If unset, a new container will be created.
 - `apriltag_config_file`: Full path to the apriltag configuration file to use.
 - `kinect_config_file`: Full path to the kinect configuration file to use.
+- `cam_sn`: Serial number of the camera to be included in the simulation, with 'a' as prefix. (default: *a000191301712*)
 
 ### robot.launch.py
 
@@ -234,9 +235,11 @@ This launch file is used to launch the remote environment with the Azure Kinect 
 
 **Input Arguments:**
 - `container`: Name of an existing node container to load launched nodes into. If unset, a new container will be created for the apriltag detections.
-- `only_camera`: If set to `true`, only the camera and apriltag node will be launched.
 - `apriltag_config_file`: Full path to the apriltag configuration file to use.
 - `kinect_config_file`: Full path to the kinect configuration file to use.
+- `camera_number`: Number of cameras to be included in the simulation. Can be *1* or *2*. (default: *1*)
+- `cam_sn`: Serial number of the camera to be included in the simulation, with 'a' as prefix. (default: *a000181401712*)
+- `cam2_sn`: Serial number of the second camera to be included in the simulation, with 'a' as prefix. (default: *a000191301712*)
 
 ### include_markers.launch.py
 
